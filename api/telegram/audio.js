@@ -14,7 +14,9 @@ export default async function handler(req, res) {
     if (!fileResponse.ok) { res.status(502).json({ error: 'Не удалось скачать аудио из Telegram' }); return }
     const bytes = Buffer.from(await fileResponse.arrayBuffer())
     res.status(200)
-    res.setHeader('Content-Type', fileResponse.headers.get('content-type') || 'application/octet-stream')
+    const extension = String(info.result.file_path).split('.').pop().toLowerCase()
+    const mimeTypes = { mp3: 'audio/mpeg', wav: 'audio/wav', m4a: 'audio/mp4', aac: 'audio/aac', ogg: 'audio/ogg', opus: 'audio/ogg', flac: 'audio/flac', aiff: 'audio/aiff', aif: 'audio/aiff' }
+    res.setHeader('Content-Type', mimeTypes[extension] || fileResponse.headers.get('content-type') || 'application/octet-stream')
     res.setHeader('Content-Length', String(bytes.length))
     res.setHeader('Content-Disposition', 'attachment; filename="telegram-audio"')
     res.setHeader('Cache-Control', 'private, no-store')
