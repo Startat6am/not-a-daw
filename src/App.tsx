@@ -5,6 +5,11 @@ function formatDuration(seconds?: number) {
   if (seconds === undefined || !Number.isFinite(seconds)) return '—:—'
   return `${Math.floor(seconds / 60).toString().padStart(2, '0')}:${Math.floor(seconds % 60).toString().padStart(2, '0')}`
 }
+function formatBitrate(bytes: number, duration?: number) {
+  if (!duration || !Number.isFinite(duration) || duration <= 0 || bytes <= 0) return 'битрейт —'
+  const kbps = Math.round(bytes * 8 / duration / 1000)
+  return kbps > 0 ? `${kbps} kbps` : 'битрейт —'
+}
 function formatBytes(bytes: number) {
   if (bytes <= 0) return '0 B'
   return bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`
@@ -47,6 +52,8 @@ export default function App() {
   const [telegramOpen, setTelegramOpen] = useState(false)
   const [telegramBusy, setTelegramBusy] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
+  const touchStartX = useRef<number | null>(null)
+  const [swipedTrackId, setSwipedTrackId] = useState<string | null>(null)
   const audioA = useRef<HTMLAudioElement>(null)
   const audioB = useRef<HTMLAudioElement>(null)
   const loadedA = tracks.find((track) => track.id === deckA)
@@ -229,11 +236,11 @@ export default function App() {
           const onB = Boolean(saved && deckB === saved.id)
           const progress = downloadProgress?.fileId === item.fileId ? downloadProgress : null
           return <div className={`telegram-feed-row ${onA ? 'loaded-on-a' : ''} ${onB ? 'loaded-on-b' : ''}`} key={item.fileId}>
-            <div className="telegram-track-info"><strong title={item.name}>{item.name}</strong>{saved && <span className="loaded-label">{onA && onB ? 'В деках A + B' : onA ? 'Загружен в деку A' : onB ? 'Загружен в деку B' : 'В библиотеке'}</span>}
+            <div className="telegram-track-info"><strong title={item.name}>{item.name}</strong><span className="telegram-bitrate">{formatBitrate(item.size, item.duration)}</span>
               {progress && <div className="download-progress"><div className="download-progress-label"><span>{progress.stage === 'saving' ? 'Сохранение в библиотеку…' : 'Скачивание из Telegram…'}</span><span>{progress.total ? `${Math.min(100, Math.round(progress.loaded / progress.total * 100))}%` : formatBytes(progress.loaded)}</span></div><div className="download-progress-track"><i style={{ width: progress.stage === 'saving' ? '100%' : progress.total ? `${Math.min(100, progress.loaded / progress.total * 100)}%` : '35%' }} /></div><span className="download-progress-size">{formatBytes(progress.loaded)} / {progress.total ? formatBytes(progress.total) : 'размер неизвестен'}</span></div>}
             </div>
-            <button className={onA ? 'deck-target active-a' : ''} aria-label={`Загрузить ${item.name} в дек A`} onClick={() => void importTelegramTrack(item, 'A')} disabled={telegramBusy}>{onA ? '✓ A' : 'A'}</button>
-            <button className={onB ? 'deck-target active-b' : ''} aria-label={`Загрузить ${item.name} в дек B`} onClick={() => void importTelegramTrack(item, 'B')} disabled={telegramBusy}>{onB ? '✓ B' : 'B'}</button>
+            <button className={onA ? 'deck-target active-a' : ''} aria-label={`Загрузить ${item.name} в дек A`} onClick={() => void importTelegramTrack(item, 'A')} disabled={telegramBusy}>A</button>
+            <button className={onB ? 'deck-target active-b' : ''} aria-label={`Загрузить ${item.name} в дек B`} onClick={() => void importTelegramTrack(item, 'B')} disabled={telegramBusy}>B</button>
             <button aria-label={`Добавить ${item.name} в библиотеку`} onClick={() => void importTelegramTrack(item)} disabled={telegramBusy}>{saved ? '✓' : '↓'}</button>
           </div>
         })}
@@ -242,10 +249,20 @@ export default function App() {
       {error && <p className="error-note" role="alert">{error}<button aria-label="Закрыть" onClick={() => setError('')}>×</button></p>}
       {busy && <div className="loading-line" />}
       {tracks.length === 0 ? <button className="empty-library" onClick={() => fileInput.current?.click()} disabled={busy}><span>＋</span></button> :
-        <div className="track-list">{tracks.map((track) => <article className={`track-row ${deckA === track.id ? 'loaded-on-a' : ''} ${deckB === track.id ? 'loaded-on-b' : ''}`} key={track.id}>
-          <span className="track-symbol">♫</span><div className="track-details"><strong title={track.name}>{track.name}</strong><span>{formatDuration(track.duration)} · {formatBytes(track.size)}</span></div>
-          <button className={`mini-button ${deckA === track.id ? 'active-a' : ''}`} aria-label={`В дек A: ${track.name}`} onClick={() => setDeckA(track.id)}>{deckA === track.id ? '✓ A' : 'A'}</button><button className={`mini-button mini-b ${deckB === track.id ? 'active-b' : ''}`} aria-label={`В дек B: ${track.name}`} onClick={() => setDeckB(track.id)}>{deckB === track.id ? '✓ B' : 'B'}</button><button className="remove-button" aria-label={`Удалить ${track.name}`} onClick={() => void removeTrack(track)}>×</button>
-        </article>)}</div>}
+        <div className="track-list">{tracks.map((track) => <div className="track-row-shell" key={track.id}>
+          <div className="track-row-actions">
+            <button aria-label={`Настройки ${track.name}`} title="Настройки (скоро)">⚙</button>
+            <button className="trash-action" aria-label={`Удалить ${track.name}`} title="Удалить трек" onClick={() => { void removeTrack(track); setSwipedTrackId(null) }}>♲</button>
+          </div>
+          <article className={`track-row ${deckA === track.id ? 'loaded-on-a' : ''} ${deckB === track.id ? 'loaded-on-b' : ''} ${swipedTrackId === track.id ? 'swiped' : ''}`}
+            onTouchStart={(event) => { touchStartX.current = event.touches[0]?.clientX ?? null }}
+            onTouchEnd={(event) => { const startX = touchStartX.current; const endX = event.changedTouches[0]?.clientX; if (startX !== null && endX !== undefined) { if (endX - startX > 40) setSwipedTrackId(track.id); else if (startX - endX > 40 && swipedTrackId === track.id) setSwipedTrackId(null) } touchStartX.current = null }}
+            onMouseDown={(event) => { touchStartX.current = event.clientX }}
+            onMouseUp={(event) => { const startX = touchStartX.current; if (startX !== null && event.clientX - startX > 40) setSwipedTrackId(track.id); else if (startX !== null && startX - event.clientX > 40 && swipedTrackId === track.id) setSwipedTrackId(null); touchStartX.current = null }}>
+            <span className="track-symbol">♫</span><div className="track-details"><strong title={track.name}>{track.name}</strong><span>{formatDuration(track.duration)} · {formatBytes(track.size)} · {formatBitrate(track.size, track.duration)}</span></div>
+            <button className={`mini-button ${deckA === track.id ? 'active-a' : ''}`} aria-label={`В дек A: ${track.name}`} onClick={() => setDeckA(track.id)}>A</button><button className={`mini-button mini-b ${deckB === track.id ? 'active-b' : ''}`} aria-label={`В дек B: ${track.name}`} onClick={() => setDeckB(track.id)}>B</button>
+          </article>
+        </div>)}</div>
     </section>
     <footer><span className="wordmark"><span className="brand-mark">n</span><span>not-a-daw</span></span><span className="local-indicator"><i /> LOCAL</span></footer>
   </main>
