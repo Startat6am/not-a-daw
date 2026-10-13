@@ -101,7 +101,10 @@ export default function App() {
         duration: await readDuration(file), addedAt: Date.now(), blob: file,
       })))
       await addTracks(records)
-      await refresh()
+      const updated = await getTracks()
+      setTracks(updated)
+      if (!deckA && records[0]) setDeckA(records[0].id)
+      else if (!deckB && records[0]) setDeckB(records[0].id)
     } catch { setError('Не удалось добавить файлы. Проверь свободное место на устройстве.') }
     finally { setBusy(false); if (fileInput.current) fileInput.current.value = '' }
   }
@@ -123,7 +126,7 @@ export default function App() {
     } catch (e) { setError(e instanceof Error ? e.message : 'Не удалось подключиться к Telegram') }
     finally { setTelegramBusy(false) }
   }
-  async function importTelegramTrack(item: TelegramTrack) {
+  async function importTelegramTrack(item: TelegramTrack, targetDeck?: 'A' | 'B') {
     setTelegramBusy(true); setError('')
     try {
       const response = await fetch('/api/telegram/audio?fileId=' + encodeURIComponent(item.fileId))
@@ -132,6 +135,10 @@ export default function App() {
       const record: LocalTrack = { id: makeId(), name: item.name || 'Telegram audio', type: item.type || blob.type || 'audio/mpeg', size: blob.size, duration: item.duration, addedAt: Date.now(), blob, externalId: item.fileId, sourceUpdateId: item.updateId }
       await addTracks([record])
       const updated = await getTracks(); setTracks(updated)
+      if (targetDeck === 'A') setDeckA(record.id)
+      else if (targetDeck === 'B') setDeckB(record.id)
+      else if (!deckA) setDeckA(record.id)
+      else if (!deckB) setDeckB(record.id)
       setTelegramTracks((items) => items.filter((track) => track.fileId !== item.fileId))
       const remaining = telegramTracks.filter((track) => track.fileId !== item.fileId && !updated.some((saved) => saved.externalId === track.fileId))
       if (remaining.length === 0 && telegramMaxUpdateId !== null) { await fetch('/api/telegram/ack', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ offset: telegramMaxUpdateId + 1 }) }); setTelegramMaxUpdateId(null) }
@@ -174,7 +181,7 @@ export default function App() {
         <div className="telegram-feed-head"><span>TELEGRAM · @dnb_selected</span><button aria-label="Закрыть Telegram" onClick={() => setTelegramOpen(false)}>×</button></div>
         {telegramBusy && <div className="loading-line" />}
         {!telegramBusy && telegramTracks.filter((item) => !tracks.some((saved) => saved.externalId === item.fileId)).length === 0 && <div className="telegram-feed-empty">Нет новых треков. Добавь бота администратором канала для новых публикаций или перешли старые треки боту в личный чат.</div>}
-        {telegramTracks.filter((item) => !tracks.some((saved) => saved.externalId === item.fileId)).map((item) => <div className="telegram-feed-row" key={item.fileId}><strong title={item.name}>{item.name}</strong><button onClick={() => void importTelegramTrack(item)} disabled={telegramBusy}>↓</button></div>)}
+        {telegramTracks.filter((item) => !tracks.some((saved) => saved.externalId === item.fileId)).map((item) => <div className="telegram-feed-row" key={item.fileId}><strong title={item.name}>{item.name}</strong><button aria-label={`Загрузить ${item.name} в дек A`} onClick={() => void importTelegramTrack(item, 'A')} disabled={telegramBusy}>A</button><button aria-label={`Загрузить ${item.name} в дек B`} onClick={() => void importTelegramTrack(item, 'B')} disabled={telegramBusy}>B</button><button aria-label={`Добавить ${item.name} в библиотеку`} onClick={() => void importTelegramTrack(item)} disabled={telegramBusy}>↓</button></div>)}
         <div className="telegram-feed-empty"><a href="https://t.me/dnb_selected" target="_blank" rel="noreferrer">Открыть канал ↗</a></div>
       </div>}
       {error && <p className="error-note" role="alert">{error}<button aria-label="Закрыть" onClick={() => setError('')}>×</button></p>}
