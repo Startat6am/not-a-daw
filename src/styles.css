@@ -42,3 +42,24 @@
 .track-row .mini-button{font-size:11px;font-weight:650}
 .track-row .mini-button.active-a,.track-row .mini-button.active-b{background:#202522;border-color:#424940;color:#aeb5af}
 @media(max-width:600px){.track-row-actions button{font-size:15px}.telegram-bitrate{font-size:9px}}
+
+
+/* Track details panel */
+.track-detail-backdrop{position:fixed;inset:0;z-index:20;display:grid;place-items:center;padding:18px;background:#000b;backdrop-filter:blur(8px)}
+.track-detail-panel{width:min(100%,440px);padding:20px;border:1px solid #39413b;border-radius:16px;background:#151817;box-shadow:0 22px 80px #000b}
+.track-detail-header{display:flex;align-items:center;gap:12px;min-width:0;margin-bottom:20px}
+.track-detail-icon{display:grid;place-items:center;flex:0 0 42px;height:42px;border-radius:11px;background:#29321f;color:var(--lime);font-size:21px}
+.track-detail-header>div{flex:1;min-width:0}
+.track-detail-eyebrow{display:block;margin-bottom:5px;color:#8b958c;font:9px ui-monospace,monospace;letter-spacing:1.4px}
+.track-detail-header h2{margin:0;color:#f4f5f2;font-size:15px;line-height:1.4;overflow-wrap:anywhere}
+.track-detail-close{flex:0 0 32px;width:32px;height:32px;border:1px solid #343a36;border-radius:9px;background:#202421;color:#c9d0c9;font-size:22px}
+.track-detail-stats{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
+.track-detail-stats>div{display:flex;flex-direction:column;gap:8px;min-width:0;padding:13px;border:1px solid #2d332f;border-radius:10px;background:#101312}
+.track-detail-stats span,.track-detail-meta span{color:#858e87;font:9px ui-monospace,monospace;letter-spacing:.6px}
+.track-detail-stats strong{color:#e9eee8;font-size:15px;overflow-wrap:anywhere}
+.track-detail-meta{display:flex;justify-content:space-between;gap:12px;padding:11px 2px;border-bottom:1px solid #292e2b;font-size:11px}
+.track-detail-meta strong{color:#d8ded7;font-weight:550;text-align:right;overflow-wrap:anywhere}
+.track-detail-actions{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:17px}
+.track-detail-actions button{height:42px;border:1px solid #3c4a32;border-radius:10px;background:#29321f;color:var(--lime);font-size:12px;font-weight:750}
+.track-detail-actions button:last-child{border-color:#584135;background:#30231d;color:var(--orange)}
+@media(max-width:370px){.track-detail-panel{padding:15px}.track-detail-stats>div{padding:10px}}
