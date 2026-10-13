@@ -1,4 +1,4 @@
-const CACHE_NAME = 'not-a-daw-shell-v2'
+const CACHE_NAME = 'not-a-daw-shell-v3'
 const APP_SHELL = ['/', '/manifest.webmanifest']
 const DB_NAME = 'not-a-daw-library'
 const STORE_NAME = 'tracks'
@@ -50,6 +50,9 @@ async function saveSharedFiles(request) {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url)
   if (url.origin !== self.location.origin) return
+  // API responses must always reach the server. Caching /api/telegram/tracks
+  // can freeze queue diagnostics and replay already-consumed Telegram updates.
+  if (url.pathname.startsWith('/api/')) return
   if (event.request.method === 'POST' && url.pathname === '/share-target') {
     event.respondWith((async () => {
       try { await saveSharedFiles(event.request) } catch (error) { console.error('Shared audio import failed', error) }
