@@ -15,6 +15,43 @@ function formatBytes(bytes: number) {
   if (bytes <= 0) return '0 B'
   return bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
+
+const waveformCache = new WeakMap<Blob, Promise<number[]>>()
+function getWaveformPeaks(blob: Blob, bars = 144): Promise<number[]> {
+  const cached = waveformCache.get(blob)
+  if (cached) return cached
+  const task = (async () => {
+    const scope = window as typeof window & { webkitAudioContext?: typeof AudioContext }
+    const AudioContextClass = window.AudioContext || scope.webkitAudioContext
+    if (!AudioContextClass || !blob.size) throw new Error('Waveform decoding unavailable')
+    const context = new AudioContextClass()
+    try {
+      const buffer = await context.decodeAudioData(await blob.arrayBuffer())
+      if (!buffer.length) throw new Error('Empty audio buffer')
+      const peaks = new Array<number>(bars).fill(0)
+      let globalPeak = 0
+      for (let bin = 0; bin < bars; bin++) {
+        const start = Math.floor(bin * buffer.length / bars)
+        const end = Math.max(start + 1, Math.floor((bin + 1) * buffer.length / bars))
+        let peak = 0
+        for (let channelIndex = 0; channelIndex < buffer.numberOfChannels; channelIndex++) {
+          const channel = buffer.getChannelData(channelIndex)
+          for (let sampleIndex = start; sampleIndex < Math.min(end, buffer.length); sampleIndex++) {
+            peak = Math.max(peak, Math.abs(channel[sampleIndex] || 0))
+          }
+        }
+        peaks[bin] = peak
+        globalPeak = Math.max(globalPeak, peak)
+      }
+      return peaks.map((peak) => globalPeak > 0 ? Math.max(0.035, Math.pow(peak / globalPeak, 0.68)) : 0.035)
+    } finally {
+      await context.close().catch(() => undefined)
+    }
+  })()
+  waveformCache.set(blob, task)
+  return task
+}
+
 type TelegramTrack = { updateId: number; fileId: string; name: string; type: string; size: number; duration?: number; caption?: string }
 
 function makeId() { return `track-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}` }
@@ -348,12 +385,35 @@ export default function App() {
 
 function Deck({ letter, track, tracks, onLoad, onImport, choosing, setChoosing, playing, time, duration, onPlay, onSeek, onStop, onSync, syncRate, loadFeedback }: { letter: 'A' | 'B'; track?: LocalTrack; tracks: LocalTrack[]; onLoad: (id: string) => void; onImport: () => void; choosing: boolean; setChoosing: (value: boolean) => void; playing: boolean; time: number; duration: number; onPlay: () => void; onSeek: (value: number) => void; onStop: () => void; onSync: () => void; syncRate: number; loadFeedback: string }) {
   const progress = duration > 0 ? Math.min(100, time / duration * 100) : 0
+  const [waveformPeaks, setWaveformPeaks] = useState<number[]>([])
+  useEffect(() => {
+    let active = true
+    setWaveformPeaks([])
+    if (track?.blob) {
+      void getWaveformPeaks(track.blob).then((peaks) => {
+        if (active) setWaveformPeaks(peaks)
+      }).catch(() => {
+        if (active) setWaveformPeaks([])
+      })
+    }
+    return () => { active = false }
+  }, [track?.id, track?.blob])
+  const beatCount = track?.bpm && duration > 0 ? Math.floor(duration * track.bpm / 60) : 0
+  const gridStride = Math.max(1, Math.ceil(beatCount / 240))
   return <article className={`deck deck-${letter.toLowerCase()}`}>
     <div className="deck-head"><span className="deck-letter">{letter}</span><span className="deck-time">{formatDuration(time)} / {formatDuration(duration || track?.duration)}</span><button className="deck-menu" aria-label={`Выбрать трек для деки ${letter}`} onClick={() => tracks.length ? setChoosing(!choosing) : onImport()}>•••</button></div>
     <div className={`turntable ${playing ? 'is-playing' : ''}`}><div className="vinyl"><div className="vinyl-grooves" /><div className="vinyl-label">{letter}</div></div><div className="tonearm"><i /></div></div>
     <div className="deck-track">{track?.name ?? '—'}<span>{track ? formatBytes(track.size) : ' '}</span></div>
     {loadFeedback && track && <div className="deck-load-feedback" title={loadFeedback}>{loadFeedback}</div>}
-    <div className={`waveform wave-${letter.toLowerCase()}`} aria-label="Форма волны" role="img">{Array.from({ length: 56 }, (_, i) => <i key={i} style={{height:`${8 + Math.abs(Math.sin(i * (letter === 'A' ? 1.73 : 1.19) + (letter === 'A' ? 0 : 1)) * Math.cos(i * .29)) * 70}%`, opacity: i / 56 <= progress / 100 ? 1 : .48}} />)}</div>
+    <div className={`waveform wave-${letter.toLowerCase()}`} aria-label={`Реальная форма волны ${letter}${track?.bpm ? `, сетка ${track.bpm} BPM` : ''}`} role="img">
+      <div className="waveform-grid" aria-hidden="true">{track?.bpm && duration > 0 && Array.from({ length: Math.floor(beatCount / gridStride) + 1 }, (_, i) => {
+        const beat = i * gridStride
+        return <i key={beat} className={beat % 4 === 0 ? 'waveform-barline' : ''} style={{ left: `${beat * 60 / track.bpm! / duration * 100}%` }} />
+      })}</div>
+      <div className="waveform-bars">{waveformPeaks.length ? waveformPeaks.map((peak, i) => <i key={i} style={{ height: `${Math.max(5, peak * 94)}%`, opacity: i / waveformPeaks.length <= progress / 100 ? 1 : .38 }} />) : <span className="waveform-loading">{track ? 'ЗАГРУЗКА ВОЛНЫ…' : 'ЗАГРУЗИ ТРЕК'}</span>}</div>
+      <div className="waveform-playhead" style={{ left: `${progress}%` }} />
+    </div>
+    <div className="waveform-caption"><span>WAVEFORM</span><span>{track?.bpm ? `BEAT GRID · ${track.bpm} BPM` : 'BEAT GRID · BPM —'}</span></div>
     <input className="seek-bar" aria-label={`Позиция трека ${letter}`} type="range" min="0" max={Math.max(duration, 0.1)} step="0.1" value={Math.min(time, Math.max(duration, 0.1))} onChange={(event) => onSeek(Number(event.target.value))} style={{'--seek-position': `${progress}%`} as CSSProperties} />
     <div className="deck-meta"><span><b>{track?.bpm ?? '—'}</b> BPM</span><span><b>{syncRate.toFixed(2)}×</b> RATE</span></div>
     <div className="transport"><button aria-label={`Сбросить дек ${letter}`} onClick={onStop}>↶</button><button className="play-button" aria-label={playing ? 'Пауза' : 'Воспроизвести'} onClick={onPlay} disabled={!track}>{playing ? 'Ⅱ' : '▶'}</button><button aria-label={`Выбрать трек для деки ${letter}`} onClick={() => tracks.length ? setChoosing(!choosing) : onImport()}>♫</button></div>
