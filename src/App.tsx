@@ -249,7 +249,7 @@ export default function App() {
       {error && <p className="error-note" role="alert">{error}<button aria-label="Закрыть" onClick={() => setError('')}>×</button></p>}
       {busy && <div className="loading-line" />}
       {tracks.length === 0 ? <button className="empty-library" onClick={() => fileInput.current?.click()} disabled={busy}><span>＋</span></button> :
-        <div className="track-list">{tracks.map((track) => <div className="track-row-shell" key={track.id}>
+        <div className="track-list">{tracks.map((track) => <div className={`track-row-shell ${swipedTrackId === track.id ? 'open' : ''}`} key={track.id}>
           <div className="track-row-actions">
             <button aria-label={`Настройки ${track.name}`} title="Настройки (скоро)">⚙</button>
             <button className="trash-action" aria-label={`Удалить ${track.name}`} title="Удалить трек" onClick={() => { void removeTrack(track); setSwipedTrackId(null) }}>🗑</button>
