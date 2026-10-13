@@ -63,3 +63,12 @@
 .track-detail-actions button{height:42px;border:1px solid #3c4a32;border-radius:10px;background:#29321f;color:var(--lime);font-size:12px;font-weight:750}
 .track-detail-actions button:last-child{border-color:#584135;background:#30231d;color:var(--orange)}
 @media(max-width:370px){.track-detail-panel{padding:15px}.track-detail-stats>div{padding:10px}}
+
+
+/* Deck loading feedback and beat sync */
+.deck-load-feedback{margin-top:2px;color:#a7b29f;font:9px ui-monospace,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sync-button{display:block;width:100%;height:32px;margin-top:8px;border:1px solid #414b3a;border-radius:8px;background:#20271c;color:var(--lime);font:700 10px ui-monospace,monospace;letter-spacing:1px}
+.deck-b .sync-button{border-color:#574034;background:#28201c;color:var(--orange)}
+.sync-button:disabled{opacity:.35}
+.sync-feedback{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:12px 0 0;padding:10px 12px;border:1px solid #394632;border-radius:9px;background:#1b2118;color:#d8e8c8;font-size:11px;line-height:1.5}
+.sync-feedback button{flex:0 0 auto;border:0;background:none;color:inherit;font-size:18px}
