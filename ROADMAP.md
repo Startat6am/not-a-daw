@@ -20,7 +20,7 @@ This file is the working product roadmap. Update checkboxes as work ships; Git c
 - [x] Confirm gear and trash actions appear on swipe.
 - [ ] Make the gear action useful (track details/actions); avoid a dead placeholder.
 - [ ] Improve track selection and loading feedback for each deck.
-- [x] Automatically analyze BPM after a track is added and show it in the library row and loaded deck.
+- [ ] Automatically analyze BPM after a track is added and show it in the library row and loaded deck (implementation added; awaiting production verification).
 - [ ] Add musical key detection, with graceful fallback when analysis is unavailable.
 - [ ] Improve waveform usefulness and seek accuracy.
 - [ ] Add library search and sorting (name, duration, recently added).
