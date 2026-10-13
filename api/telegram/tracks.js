@@ -21,15 +21,14 @@ export default async function handler(req, res) {
     if (!meData.ok) return send(res, 502, { error: 'Telegram не подтвердил токен через getMe. Проверь, что в Vercel сохранён токен нужного бота.' })
     if (!webhookData.ok) return send(res, 502, { error: 'Не удалось проверить настройки получения обновлений Telegram.' })
     const botUsername = meData.result?.username || null
-    const membershipResponse = await fetch(API + '/bot' + token + '/getChatMember?chat_id=' + encodeURIComponent('@dnb_selected') + '&user_id=' + encodeURIComponent(String(meData.result.id)))
-    const membershipData = await membershipResponse.json()
-    if (!membershipResponse.ok || !membershipData.ok) {
-      return send(res, 409, { error: 'Токен бота верный, но Telegram не подтверждает доступ к каналу @dnb_selected. Добавь именно @' + botUsername + ' администратором этого канала и попробуй снова.' })
-    }
-    const channelStatus = membershipData.result?.status
-    if (channelStatus !== 'administrator' && channelStatus !== 'creator') {
-      return send(res, 409, { error: 'Бот @' + botUsername + ' сейчас не администратор @dnb_selected (статус: ' + String(channelStatus || 'неизвестен') + '). Добавь его администратором именно этого канала, затем нажми Telegram ещё раз.' })
-    }
+    // Channel membership is optional: users can import audio by sending it directly to the bot.
+    let channelStatus = 'unknown'
+    try {
+      const membershipResponse = await fetch(API + '/bot' + token + '/getChatMember?chat_id=' + encodeURIComponent('@dnb_selected') + '&user_id=' + encodeURIComponent(String(meData.result.id)))
+      const membershipData = await membershipResponse.json()
+      if (membershipResponse.ok && membershipData.ok) channelStatus = membershipData.result?.status || 'unknown'
+      else channelStatus = 'unavailable'
+    } catch { channelStatus = 'unavailable' }
     const webhookEnabled = Boolean(webhookData.result?.url)
     const webhookPendingCount = Number(webhookData.result?.pending_update_count || 0)
     const response = await fetch(API + '/bot' + token + '/getUpdates?timeout=0&allowed_updates=' + encodeURIComponent(JSON.stringify(['channel_post', 'edited_channel_post', 'message'])))
@@ -55,8 +54,9 @@ export default async function handler(req, res) {
       if (isChannelPost) matchingChannelPosts += 1
       const forwardedOrigin = post.forward_origin?.chat?.username || post.forward_from_chat?.username || ''
       const isForwardedChannelPost = update.message && String(forwardedOrigin).toLowerCase() === 'dnb_selected'
-      if (!isChannelPost && !isForwardedChannelPost) continue
       const media = getMedia(post)
+      const isDirectPrivateAudio = Boolean(update.message && post.chat?.type === 'private' && media?.file?.file_id)
+      if (!isChannelPost && !isForwardedChannelPost && !isDirectPrivateAudio) continue
       if (media?.file?.file_id) recognizedAudioPosts += 1
       if (!media || !media.file.file_id) continue
       tracks.push({
@@ -78,7 +78,7 @@ export default async function handler(req, res) {
       const ackData = await ackResponse.json()
       if (!ackResponse.ok || !ackData.ok) return send(res, 502, { error: ackData.description || 'Не удалось очистить нерелевантные обновления Telegram. Попробуй ещё раз.' })
     }
-    return send(res, 200, { tracks, maxUpdateId, diagnostics: { botUsername, webhookEnabled, webhookPendingCount, pendingUpdates: updates.length, updateTypes: [...new Set(updates.map(update => Object.keys(update).find(key => key !== 'update_id') || 'unknown'))], channelPosts, matchingChannelPosts, recognizedAudioPosts } })
+    return send(res, 200, { tracks, maxUpdateId, diagnostics: { botUsername, channelStatus, webhookEnabled, webhookPendingCount, pendingUpdates: updates.length, updateTypes: [...new Set(updates.map(update => Object.keys(update).find(key => key !== 'update_id') || 'unknown'))], channelPosts, matchingChannelPosts, recognizedAudioPosts } })
   } catch {
     return send(res, 502, { error: 'Не удалось связаться с Telegram. Попробуй ещё раз.' })
   }
