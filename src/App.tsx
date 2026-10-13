@@ -55,11 +55,13 @@ export default function App() {
   const fileInput = useRef<HTMLInputElement>(null)
   const touchStartX = useRef<number | null>(null)
   const [swipedTrackId, setSwipedTrackId] = useState<string | null>(null)
+  const [detailTrackId, setDetailTrackId] = useState<string | null>(null)
   const bpmAnalyzing = useRef(new Set<string>())
   const audioA = useRef<HTMLAudioElement>(null)
   const audioB = useRef<HTMLAudioElement>(null)
   const loadedA = tracks.find((track) => track.id === deckA)
   const loadedB = tracks.find((track) => track.id === deckB)
+  const detailTrack = tracks.find((track) => track.id === detailTrackId)
 
   const refresh = useCallback(() => { getTracks().then(setTracks).catch(() => setError('Не удалось открыть библиотеку')) }, [])
   useEffect(() => {
@@ -271,7 +273,7 @@ export default function App() {
       {tracks.length === 0 ? <button className="empty-library" onClick={() => fileInput.current?.click()} disabled={busy}><span>＋</span></button> :
         <div className="track-list">{tracks.map((track) => <div className={`track-row-shell ${swipedTrackId === track.id ? 'open' : ''}`} key={track.id}>
           <div className="track-row-actions">
-            <button aria-label={`Настройки ${track.name}`} title="Настройки (скоро)">⚙</button>
+            <button aria-label={`Информация о треке ${track.name}`} title="Информация о треке" onClick={() => { setDetailTrackId(track.id); setSwipedTrackId(null) }}>⚙</button>
             <button className="trash-action" aria-label={`Удалить ${track.name}`} title="Удалить трек" onClick={() => { void removeTrack(track); setSwipedTrackId(null) }}>🗑</button>
           </div>
           <article className={`track-row ${deckA === track.id ? 'loaded-on-a' : ''} ${deckB === track.id ? 'loaded-on-b' : ''} ${swipedTrackId === track.id ? 'swiped' : ''}`}
@@ -284,6 +286,20 @@ export default function App() {
           </article>
         </div>)}</div>}
     </section>
+    {detailTrack && <div className="track-detail-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setDetailTrackId(null) }}>
+      <section className="track-detail-panel" role="dialog" aria-modal="true" aria-labelledby="track-detail-title">
+        <div className="track-detail-header"><span className="track-detail-icon">♫</span><div><span className="track-detail-eyebrow">TRACK DETAILS</span><h2 id="track-detail-title">{detailTrack.name}</h2></div><button className="track-detail-close" aria-label="Закрыть информацию о треке" onClick={() => setDetailTrackId(null)}>×</button></div>
+        <div className="track-detail-stats">
+          <div><span>BPM</span><strong>{detailTrack.bpm ?? (detailTrack.bpmStatus === 'pending' ? 'Анализ…' : '—')}</strong></div>
+          <div><span>ДЛИТЕЛЬНОСТЬ</span><strong>{formatDuration(detailTrack.duration)}</strong></div>
+          <div><span>РАЗМЕР</span><strong>{formatBytes(detailTrack.size)}</strong></div>
+          <div><span>БИТРЕЙТ</span><strong>{formatBitrate(detailTrack.size, detailTrack.duration)}</strong></div>
+        </div>
+        <div className="track-detail-meta"><span>Формат</span><strong>{detailTrack.type.replace('audio/', '').toUpperCase() || '—'}</strong></div>
+        <div className="track-detail-meta"><span>Добавлен</span><strong>{new Date(detailTrack.addedAt).toLocaleDateString()}</strong></div>
+        <div className="track-detail-actions"><button onClick={() => { setDeckA(detailTrack.id); setDetailTrackId(null) }}>Загрузить в A</button><button onClick={() => { setDeckB(detailTrack.id); setDetailTrackId(null) }}>Загрузить в B</button></div>
+      </section>
+    </div>}
     <footer><span className="wordmark"><span className="brand-mark">n</span><span>not-a-daw</span></span><span className="local-indicator"><i /> LOCAL</span></footer>
   </main>
 }
