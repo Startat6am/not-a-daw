@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type PointerEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent } from 'react'
 import { addTracks, deleteTrack, getTracks, type LocalTrack } from './lib/audioLibrary'
 import { detectBpm } from './lib/bpm'
+import { detectBeatGrid } from './lib/beatGrid'
 
 function formatDuration(seconds?: number) {
   if (seconds === undefined || !Number.isFinite(seconds)) return '—:—'
@@ -99,6 +100,8 @@ export default function App() {
   const [detailTrackId, setDetailTrackId] = useState<string | null>(null)
   const bpmAnalyzing = useRef(new Set<string>())
   const bpmAttempted = useRef(new Set<string>())
+  const beatGridAnalyzing = useRef(new Set<string>())
+  const beatGridAttempted = useRef(new Set<string>())
   const audioA = useRef<HTMLAudioElement>(null)
   const audioB = useRef<HTMLAudioElement>(null)
   const loadedA = tracks.find((track) => track.id === deckA)
@@ -154,10 +157,47 @@ export default function App() {
   }, [tracks])
 
   useEffect(() => {
+    const pending = tracks.filter((track) => track.bpm && track.beatOffset === undefined && !beatGridAttempted.current.has(track.id) && !beatGridAnalyzing.current.has(track.id))
+    for (const track of pending) {
+      beatGridAttempted.current.add(track.id)
+      beatGridAnalyzing.current.add(track.id)
+      void (async () => {
+        try {
+          const grid = await detectBeatGrid(track.blob, track.bpm)
+          const updated: LocalTrack = { ...track, bpm: grid.bpm ?? track.bpm, beatOffset: grid.beatOffset, bpmStatus: 'ready' }
+          await addTracks([updated])
+          setTracks((current) => current.map((item) => item.id === track.id ? updated : item))
+        } catch {
+          const updated: LocalTrack = { ...track, beatOffset: 0 }
+          await addTracks([updated]).catch(() => undefined)
+          setTracks((current) => current.map((item) => item.id === track.id ? updated : item))
+        } finally { beatGridAnalyzing.current.delete(track.id) }
+      })()
+    }
+  }, [tracks])
+
+  useEffect(() => {
     const p = crossfade / 100
     if (audioA.current) audioA.current.volume = Math.cos(p * Math.PI / 2)
     if (audioB.current) audioB.current.volume = Math.sin(p * Math.PI / 2)
   }, [crossfade, srcA, srcB])
+
+  // Smooth playhead updates at ~30 fps; waveform geometry is memoized separately.
+  useEffect(() => {
+    if (!playingA && !playingB) return
+    let frame = 0
+    let lastUpdate = 0
+    const tick = (now: number) => {
+      if (now - lastUpdate >= 33) {
+        if (playingA && audioA.current) setTimeA(audioA.current.currentTime)
+        if (playingB && audioB.current) setTimeB(audioB.current.currentTime)
+        lastUpdate = now
+      }
+      frame = requestAnimationFrame(tick)
+    }
+    frame = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(frame)
+  }, [playingA, playingB])
 
   const loadDeck = useCallback((which: 'A' | 'B', id: string) => {
     if (which === 'A') { setDeckA(id); setLoadFeedbackA('Загрузка трека…'); setPicker(null) }
@@ -403,9 +443,9 @@ function Deck({ letter, track, tracks, onLoad, onImport, choosing, setChoosing, 
   const beatCount = track?.bpm && duration > 0 ? Math.floor(duration * track.bpm / 60) : 0
   const gridStride = Math.max(1, Math.ceil(beatCount / 1600))
   const contentWidth = Math.max(duration * zoom, 1)
-  const waveformPath = waveformPeaks.length
-    ? `M 0 50 ${waveformPeaks.map((peak, i) => `L ${i} ${50 - peak * 46}`).join(' ')} ${waveformPeaks.slice().reverse().map((peak, i) => `L ${waveformPeaks.length - 1 - i} ${50 + peak * 46}`).join(' ')} Z`
-    : ''
+  const waveformPath = useMemo(() => waveformPeaks.length
+    ? 'M 0 50 ' + waveformPeaks.map((peak, i) => 'L ' + i + ' ' + (50 - peak * 46)).join(' ') + ' ' + waveformPeaks.slice().reverse().map((peak, i) => 'L ' + (waveformPeaks.length - 1 - i) + ' ' + (50 + peak * 46)).join(' ') + ' Z'
+    : '', [waveformPeaks])
   const waveformStyle = { '--wave-content-width': `${contentWidth}px`, '--wave-offset': `calc(50% - ${time * zoom}px)` } as CSSProperties
   function beginWaveDrag(event: PointerEvent<HTMLDivElement>) {
     if (!track || !duration) return
@@ -434,7 +474,8 @@ function Deck({ letter, track, tracks, onLoad, onImport, choosing, setChoosing, 
       <div className="waveform-content" style={{ width: `${contentWidth}px`, left: `calc(50% - ${time * zoom}px)` }}>
         <div className="waveform-grid" aria-hidden="true">{track?.bpm && duration > 0 && Array.from({ length: Math.floor(beatCount / gridStride) + 1 }, (_, i) => {
           const beat = i * gridStride
-          return <i key={beat} className={beat % 4 === 0 ? 'waveform-barline' : ''} style={{ left: `${beat * 60 / track.bpm! * zoom}px` }} />
+          const beatTime = (track.beatOffset ?? 0) + beat * 60 / track.bpm!
+          return <i key={beat} className={beat % 4 === 0 ? 'waveform-barline' : ''} style={{ left: (beatTime * zoom) + 'px' }} />
         })}</div>
         <>{waveformPeaks.length ? <svg className="waveform-real" viewBox={`0 0 ${Math.max(waveformPeaks.length, 1)} 100`} preserveAspectRatio="none" aria-hidden="true"><path d={waveformPath} /></svg> : <span className="waveform-loading">{track ? 'ЗАГРУЗКА ВОЛНЫ…' : 'ЗАГРУЗИ ТРЕК'}</span>}</>
       </div>
