@@ -1,0 +1,13 @@
+{
+  "id": "/",
+  "name": "not-a-daw — DJ set studio",
+  "short_name": "not-a-daw",
+  "description": "A touch-first, local-first DJ set builder.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#101110",
+  "theme_color": "#101110",
+  "orientation": "portrait-primary",
+  "categories": ["music", "utilities"]
+}
