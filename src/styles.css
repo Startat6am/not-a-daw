@@ -72,3 +72,12 @@
 .sync-button:disabled{opacity:.35}
 .sync-feedback{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:12px 0 0;padding:10px 12px;border:1px solid #394632;border-radius:9px;background:#1b2118;color:#d8e8c8;font-size:11px;line-height:1.5}
 .sync-feedback button{flex:0 0 auto;border:0;background:none;color:inherit;font-size:18px}
+
+
+/* Make swipe actions reliably tappable on touch devices and keep BPM visible. */
+.track-row-actions{z-index:2}
+.track-row-actions button{position:relative;z-index:3;pointer-events:auto;touch-action:manipulation;cursor:pointer}
+.track-row-actions .track-info-action{color:var(--lime)}
+.track-details .track-meta-line{display:block;min-width:0;overflow-wrap:anywhere;line-height:1.5}
+.track-details .track-bpm{color:var(--lime);font-weight:750}
+.track-details .bpm-retry{display:inline-grid;place-items:center;margin-left:5px;width:17px;height:17px;border:1px solid #414b3a;border-radius:5px;background:#20271c;color:var(--lime);font-size:12px;vertical-align:middle}
