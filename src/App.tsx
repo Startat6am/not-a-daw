@@ -16,6 +16,67 @@ function formatBytes(bytes: number) {
 }
 type TelegramTrack = { updateId: number; fileId: string; name: string; type: string; size: number; duration?: number; caption?: string }
 
+async function detectBpm(blob: Blob): Promise<number | undefined> {
+  const AudioContextClass = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+  if (!AudioContextClass) return undefined
+  const context = new AudioContextClass()
+  try {
+    const buffer = await context.decodeAudioData(await blob.arrayBuffer())
+    const sampleRate = buffer.sampleRate
+    const channelCount = buffer.numberOfChannels
+    const seconds = Math.min(60, buffer.duration)
+    if (!Number.isFinite(seconds) || seconds < 8) return undefined
+    const frameSize = Math.max(1, Math.floor(sampleRate * 0.01))
+    const frameCount = Math.floor(seconds * sampleRate / frameSize)
+    const envelope = new Float64Array(frameCount)
+    const channels = Array.from({ length: channelCount }, (_, i) => buffer.getChannelData(i))
+    for (let frame = 0; frame < frameCount; frame++) {
+      const start = frame * frameSize
+      const end = Math.min(start + frameSize, Math.floor(seconds * sampleRate))
+      let energy = 0
+      for (let i = start; i < end; i += 1) {
+        let sample = 0
+        for (const channel of channels) sample += channel[i] || 0
+        sample /= channelCount
+        energy += sample * sample
+      }
+      envelope[frame] = Math.sqrt(energy / Math.max(1, end - start))
+    }
+    const onset = new Float64Array(frameCount)
+    let mean = 0
+    for (let i = 1; i < frameCount; i++) {
+      onset[i] = Math.max(0, envelope[i] - envelope[i - 1])
+      mean += onset[i]
+    }
+    mean /= frameCount
+    if (mean < 0.00001) return undefined
+    let variance = 0
+    for (let i = 0; i < frameCount; i++) { onset[i] -= mean; variance += onset[i] * onset[i] }
+    if (variance < 1e-8) return undefined
+    const minLag = Math.max(1, Math.floor(6000 / 180))
+    const maxLag = Math.min(frameCount - 1, Math.ceil(6000 / 60))
+    let bestLag = 0
+    let bestScore = -Infinity
+    const scores: number[] = []
+    for (let lag = minLag; lag <= maxLag; lag++) {
+      let score = 0
+      for (let i = lag; i < frameCount; i++) score += onset[i] * onset[i - lag]
+      scores.push(score)
+      if (score > bestScore) { bestScore = score; bestLag = lag }
+    }
+    if (!bestLag || bestScore <= 0) return undefined
+    // Prefer a strong slower pulse when it is a near-equal multiple of the strongest tempo peak.
+    for (let lag = Math.max(minLag, Math.floor(bestLag * 1.95)); lag <= Math.min(maxLag, Math.ceil(bestLag * 2.05)); lag++) {
+      const score = scores[lag - minLag]
+      if (score !== undefined && score >= bestScore * 0.9) { bestLag = lag; break }
+    }
+    const bpm = Math.round(6000 / bestLag)
+    return bpm >= 60 && bpm <= 180 ? bpm : undefined
+  } finally {
+    await context.close().catch(() => undefined)
+  }
+}
+
 function makeId() { return `track-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}` }
 function readDuration(file: File): Promise<number | undefined> {
   return new Promise((resolve) => {
@@ -82,6 +143,28 @@ export default function App() {
     setTimeB(0); setPlayingB(false); setSrcB(url)
     return () => URL.revokeObjectURL(url)
   }, [loadedB])
+
+  useEffect(() => {
+    const pending = tracks.filter((track) => track.bpmStatus === 'pending')
+    if (!pending.length) return
+    let cancelled = false
+    void Promise.all(pending.map(async (track) => {
+      try {
+        const bpm = await detectBpm(track.blob)
+        if (cancelled) return
+        const updatedTrack: LocalTrack = { ...track, bpm, bpmStatus: bpm ? 'ready' : 'unavailable' }
+        await addTracks([updatedTrack])
+        if (!cancelled) setTracks((current) => current.map((item) => item.id === track.id ? updatedTrack : item))
+      } catch {
+        if (cancelled) return
+        const updatedTrack: LocalTrack = { ...track, bpmStatus: 'unavailable' }
+        await addTracks([updatedTrack]).catch(() => undefined)
+        if (!cancelled) setTracks((current) => current.map((item) => item.id === track.id ? updatedTrack : item))
+      }
+    }))
+    return () => { cancelled = true }
+  }, [tracks])
+
   useEffect(() => {
     const p = crossfade / 100
     if (audioA.current) audioA.current.volume = Math.cos(p * Math.PI / 2)
@@ -110,7 +193,7 @@ export default function App() {
       if (!accepted.length) { setError('Выбери аудиофайл'); return }
       const records = await Promise.all(accepted.map(async (file) => ({
         id: makeId(), name: file.name, type: file.type || 'audio/unknown', size: file.size,
-        duration: await readDuration(file), addedAt: Date.now(), blob: file,
+        duration: await readDuration(file), addedAt: Date.now(), blob: file, bpmStatus: 'pending' as const,
       })))
       await addTracks(records)
       const updated = await getTracks()
@@ -177,7 +260,7 @@ export default function App() {
       }
 
       setDownloadProgress({ fileId: item.fileId, loaded: blob.size, total: blob.size || total, stage: 'saving' })
-      const record: LocalTrack = { id: makeId(), name: item.name || 'Telegram audio', type: item.type || blob.type || 'audio/mpeg', size: blob.size, duration: item.duration, addedAt: Date.now(), blob, externalId: item.fileId, sourceUpdateId: item.updateId }
+      const record: LocalTrack = { id: makeId(), name: item.name || 'Telegram audio', type: item.type || blob.type || 'audio/mpeg', size: blob.size, duration: item.duration, addedAt: Date.now(), blob, externalId: item.fileId, sourceUpdateId: item.updateId, bpmStatus: 'pending' }
       await addTracks([record])
       const updated = await getTracks(); setTracks(updated)
       if (targetDeck === 'A') setDeckA(record.id)
@@ -255,7 +338,7 @@ export default function App() {
             onTouchEnd={(event) => { const startX = touchStartX.current; const endX = event.changedTouches[0]?.clientX; if (startX !== null && endX !== undefined) { if (endX - startX > 40) setSwipedTrackId(track.id); else if (startX - endX > 40 && swipedTrackId === track.id) setSwipedTrackId(null) } touchStartX.current = null }}
             onMouseDown={(event) => { touchStartX.current = event.clientX }}
             onMouseUp={(event) => { const startX = touchStartX.current; if (startX !== null && event.clientX - startX > 40) setSwipedTrackId(track.id); else if (startX !== null && startX - event.clientX > 40 && swipedTrackId === track.id) setSwipedTrackId(null); touchStartX.current = null }}>
-            <span className="track-symbol">♫</span><div className="track-details"><strong title={track.name}>{track.name}</strong><span>{formatDuration(track.duration)} · {formatBytes(track.size)} · {formatBitrate(track.size, track.duration)}</span></div>
+            <span className="track-symbol">♫</span><div className="track-details"><strong title={track.name}>{track.name}</strong><span>{formatDuration(track.duration)} · {formatBytes(track.size)} · {formatBitrate(track.size, track.duration)} · BPM {track.bpm ?? (track.bpmStatus === 'pending' ? '…' : '—')}</span></div>
             <button className={`mini-button ${deckA === track.id ? 'active-a' : ''}`} aria-label={`В дек A: ${track.name}`} onClick={() => setDeckA(track.id)}>A</button><button className={`mini-button mini-b ${deckB === track.id ? 'active-b' : ''}`} aria-label={`В дек B: ${track.name}`} onClick={() => setDeckB(track.id)}>B</button>
           </article>
         </div>)}</div>}
@@ -272,7 +355,7 @@ function Deck({ letter, track, tracks, onLoad, onImport, choosing, setChoosing, 
     <div className="deck-track">{track?.name ?? '—'}<span>{track ? formatBytes(track.size) : ' '}</span></div>
     <div className={`waveform wave-${letter.toLowerCase()}`} aria-label="Форма волны" role="img">{Array.from({ length: 56 }, (_, i) => <i key={i} style={{height:`${8 + Math.abs(Math.sin(i * (letter === 'A' ? 1.73 : 1.19) + (letter === 'A' ? 0 : 1)) * Math.cos(i * .29)) * 70}%`, opacity: i / 56 <= progress / 100 ? 1 : .48}} />)}</div>
     <input className="seek-bar" aria-label={`Позиция трека ${letter}`} type="range" min="0" max={Math.max(duration, 0.1)} step="0.1" value={Math.min(time, Math.max(duration, 0.1))} onChange={(event) => onSeek(Number(event.target.value))} style={{'--seek-position': `${progress}%`} as CSSProperties} />
-    <div className="deck-meta"><span><b>—</b> BPM</span><span><b>—</b> KEY</span></div>
+    <div className="deck-meta"><span><b>{track?.bpm ?? '—'}</b> BPM</span><span><b>—</b> KEY</span></div>
     <div className="transport"><button aria-label={`Сбросить дек ${letter}`} onClick={onStop}>↶</button><button className="play-button" aria-label={playing ? 'Пауза' : 'Воспроизвести'} onClick={onPlay} disabled={!track}>{playing ? 'Ⅱ' : '▶'}</button><button aria-label={`Выбрать трек для деки ${letter}`} onClick={() => tracks.length ? setChoosing(!choosing) : onImport()}>♫</button></div>
     {choosing && <div className="deck-picker">{tracks.map((item) => <button key={item.id} onClick={() => { onLoad(item.id); setChoosing(false) }}>{item.name}</button>)}</div>}
   </article>
