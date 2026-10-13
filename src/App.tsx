@@ -46,6 +46,10 @@ export default function App() {
   const [durationB, setDurationB] = useState(0)
   const [playingA, setPlayingA] = useState(false)
   const [playingB, setPlayingB] = useState(false)
+  const [loadFeedbackA, setLoadFeedbackA] = useState('')
+  const [loadFeedbackB, setLoadFeedbackB] = useState('')
+  const [syncFeedback, setSyncFeedback] = useState('')
+  const [syncRates, setSyncRates] = useState<{ A: number; B: number }>({ A: 1, B: 1 })
   const [telegramTracks, setTelegramTracks] = useState<TelegramTrack[]>([])
   const [telegramMaxUpdateId, setTelegramMaxUpdateId] = useState<number | null>(null)
   const [telegramDiagnostics, setTelegramDiagnostics] = useState<{ botUsername: string | null; webhookEnabled: boolean; webhookPendingCount: number; pendingUpdates: number; privateMessages: number; recognizedAudioFiles: number } | null>(null)
@@ -73,17 +77,17 @@ export default function App() {
   }, [refresh])
 
   useEffect(() => {
-    if (!loadedA) { setSrcA(''); setTimeA(0); setDurationA(0); setPlayingA(false); if (audioA.current) audioA.current.pause(); return }
+    if (!loadedA) { setSrcA(''); setTimeA(0); setDurationA(0); setPlayingA(false); if (audioA.current) { audioA.current.pause(); audioA.current.playbackRate = 1 }; setSyncRates((r) => ({ ...r, A: 1 })); return }
     const url = URL.createObjectURL(loadedA.blob)
-    if (audioA.current) { audioA.current.pause(); audioA.current.currentTime = 0 }
-    setTimeA(0); setPlayingA(false); setSrcA(url)
+    if (audioA.current) { audioA.current.pause(); audioA.current.currentTime = 0; audioA.current.playbackRate = 1 }
+    setTimeA(0); setPlayingA(false); setSrcA(url); setLoadFeedbackA(`Загружено: ${loadedA.name}`); setSyncRates((r) => ({ ...r, A: 1 }))
     return () => URL.revokeObjectURL(url)
   }, [loadedA])
   useEffect(() => {
-    if (!loadedB) { setSrcB(''); setTimeB(0); setDurationB(0); setPlayingB(false); if (audioB.current) audioB.current.pause(); return }
+    if (!loadedB) { setSrcB(''); setTimeB(0); setDurationB(0); setPlayingB(false); if (audioB.current) { audioB.current.pause(); audioB.current.playbackRate = 1 }; setSyncRates((r) => ({ ...r, B: 1 })); return }
     const url = URL.createObjectURL(loadedB.blob)
-    if (audioB.current) { audioB.current.pause(); audioB.current.currentTime = 0 }
-    setTimeB(0); setPlayingB(false); setSrcB(url)
+    if (audioB.current) { audioB.current.pause(); audioB.current.currentTime = 0; audioB.current.playbackRate = 1 }
+    setTimeB(0); setPlayingB(false); setSrcB(url); setLoadFeedbackB(`Загружено: ${loadedB.name}`); setSyncRates((r) => ({ ...r, B: 1 }))
     return () => URL.revokeObjectURL(url)
   }, [loadedB])
 
@@ -113,6 +117,39 @@ export default function App() {
     if (audioA.current) audioA.current.volume = Math.cos(p * Math.PI / 2)
     if (audioB.current) audioB.current.volume = Math.sin(p * Math.PI / 2)
   }, [crossfade, srcA, srcB])
+
+  const loadDeck = useCallback((which: 'A' | 'B', id: string) => {
+    if (which === 'A') { setDeckA(id); setLoadFeedbackA('Загрузка трека…'); setPicker(null) }
+    else { setDeckB(id); setLoadFeedbackB('Загрузка трека…'); setPicker(null) }
+    setSyncFeedback('')
+  }, [])
+
+  function syncDeck(target: 'A' | 'B') {
+    const source = target === 'A' ? audioB.current : audioA.current
+    const destination = target === 'A' ? audioA.current : audioB.current
+    const sourceTrack = target === 'A' ? loadedB : loadedA
+    const targetTrack = target === 'A' ? loadedA : loadedB
+    if (!source || !destination || !sourceTrack || !targetTrack) {
+      setSyncFeedback('Загрузи трек в обе деки, чтобы синхронизировать такты.')
+      return
+    }
+    if (!sourceTrack.bpm || !targetTrack.bpm) {
+      setSyncFeedback('Для Sync нужен определённый BPM у обоих треков.')
+      return
+    }
+    const rate = sourceTrack.bpm / targetTrack.bpm
+    if (rate < 0.5 || rate > 2) {
+      setSyncFeedback('Разница BPM слишком большая для безопасной синхронизации (диапазон 0.5×–2×).')
+      return
+    }
+    const sourceBeat = 60 / sourceTrack.bpm
+    const targetBeat = 60 / targetTrack.bpm
+    const sourcePhase = source.currentTime % sourceBeat
+    destination.playbackRate = rate
+    destination.currentTime = Math.max(0, Math.floor(destination.currentTime / targetBeat) * targetBeat + sourcePhase * rate)
+    setSyncRates((current) => ({ ...current, [target]: rate }))
+    setSyncFeedback(`Дека ${target} синхронизирована с декой ${target === 'A' ? 'B' : 'A'} · ${sourceTrack.bpm} BPM · скорость ${rate.toFixed(3)}×`)
+  }
 
   async function togglePlay(which: 'A' | 'B') {
     const audio = which === 'A' ? audioA.current : audioB.current
@@ -236,10 +273,11 @@ export default function App() {
     <audio ref={audioB} src={srcB || undefined} preload="metadata" onTimeUpdate={() => { if (audioB.current) setTimeB(audioB.current.currentTime) }} onLoadedMetadata={() => { if (audioB.current) setDurationB(audioB.current.duration) }} onPlay={() => setPlayingB(true)} onPause={() => setPlayingB(false)} onEnded={() => setPlayingB(false)} onError={() => setError("Дека B: браузер не смог декодировать этот аудиофайл.")} />
 
     <section className="decks" aria-label="Деки">
-      <Deck letter="A" track={loadedA} tracks={tracks} onLoad={setDeckA} onImport={() => fileInput.current?.click()} choosing={picker === 'A'} setChoosing={(v) => setPicker(v ? 'A' : null)} playing={playingA} time={timeA} duration={durationA} onPlay={() => void togglePlay('A')} onSeek={(v) => seek('A', v)} onStop={() => { if (audioA.current) { audioA.current.pause(); audioA.current.currentTime = 0 } }} />
-      <Deck letter="B" track={loadedB} tracks={tracks} onLoad={setDeckB} onImport={() => fileInput.current?.click()} choosing={picker === 'B'} setChoosing={(v) => setPicker(v ? 'B' : null)} playing={playingB} time={timeB} duration={durationB} onPlay={() => void togglePlay('B')} onSeek={(v) => seek('B', v)} onStop={() => { if (audioB.current) { audioB.current.pause(); audioB.current.currentTime = 0 } }} />
+      <Deck letter="A" track={loadedA} tracks={tracks} onLoad={(id) => loadDeck('A', id)} onImport={() => fileInput.current?.click()} choosing={picker === 'A'} setChoosing={(v) => setPicker(v ? 'A' : null)} playing={playingA} time={timeA} duration={durationA} onPlay={() => void togglePlay('A')} onSeek={(v) => seek('A', v)} onStop={() => { if (audioA.current) { audioA.current.pause(); audioA.current.currentTime = 0 } }} onSync={() => syncDeck('A')} syncRate={syncRates.A} loadFeedback={loadFeedbackA} />
+      <Deck letter="B" track={loadedB} tracks={tracks} onLoad={(id) => loadDeck('B', id)} onImport={() => fileInput.current?.click()} choosing={picker === 'B'} setChoosing={(v) => setPicker(v ? 'B' : null)} playing={playingB} time={timeB} duration={durationB} onPlay={() => void togglePlay('B')} onSeek={(v) => seek('B', v)} onStop={() => { if (audioB.current) { audioB.current.pause(); audioB.current.currentTime = 0 } }} onSync={() => syncDeck('B')} syncRate={syncRates.B} loadFeedback={loadFeedbackB} />
     </section>
 
+    {syncFeedback && <p className="sync-feedback" role="status">{syncFeedback}<button aria-label="Закрыть сообщение Sync" onClick={() => setSyncFeedback('')}>×</button></p>}
     <section className="mixer" aria-label="Микшер">
       <div className="mixer-top"><span className="mixer-deck-a">A</span><span className="master-dot" /><span className="mixer-deck-b">B</span></div>
       <div className="crossfader-wrap">
@@ -304,17 +342,19 @@ export default function App() {
   </main>
 }
 
-function Deck({ letter, track, tracks, onLoad, onImport, choosing, setChoosing, playing, time, duration, onPlay, onSeek, onStop }: { letter: 'A' | 'B'; track?: LocalTrack; tracks: LocalTrack[]; onLoad: (id: string) => void; onImport: () => void; choosing: boolean; setChoosing: (value: boolean) => void; playing: boolean; time: number; duration: number; onPlay: () => void; onSeek: (value: number) => void; onStop: () => void }) {
+function Deck({ letter, track, tracks, onLoad, onImport, choosing, setChoosing, playing, time, duration, onPlay, onSeek, onStop, onSync, syncRate, loadFeedback }: { letter: 'A' | 'B'; track?: LocalTrack; tracks: LocalTrack[]; onLoad: (id: string) => void; onImport: () => void; choosing: boolean; setChoosing: (value: boolean) => void; playing: boolean; time: number; duration: number; onPlay: () => void; onSeek: (value: number) => void; onStop: () => void; onSync: () => void; syncRate: number; loadFeedback: string }) {
   const progress = duration > 0 ? Math.min(100, time / duration * 100) : 0
   return <article className={`deck deck-${letter.toLowerCase()}`}>
     <div className="deck-head"><span className="deck-letter">{letter}</span><span className="deck-time">{formatDuration(time)} / {formatDuration(duration || track?.duration)}</span><button className="deck-menu" aria-label={`Выбрать трек для деки ${letter}`} onClick={() => tracks.length ? setChoosing(!choosing) : onImport()}>•••</button></div>
     <div className={`turntable ${playing ? 'is-playing' : ''}`}><div className="vinyl"><div className="vinyl-grooves" /><div className="vinyl-label">{letter}</div></div><div className="tonearm"><i /></div></div>
     <div className="deck-track">{track?.name ?? '—'}<span>{track ? formatBytes(track.size) : ' '}</span></div>
+    {loadFeedback && track && <div className="deck-load-feedback" title={loadFeedback}>{loadFeedback}</div>}
     <div className={`waveform wave-${letter.toLowerCase()}`} aria-label="Форма волны" role="img">{Array.from({ length: 56 }, (_, i) => <i key={i} style={{height:`${8 + Math.abs(Math.sin(i * (letter === 'A' ? 1.73 : 1.19) + (letter === 'A' ? 0 : 1)) * Math.cos(i * .29)) * 70}%`, opacity: i / 56 <= progress / 100 ? 1 : .48}} />)}</div>
     <input className="seek-bar" aria-label={`Позиция трека ${letter}`} type="range" min="0" max={Math.max(duration, 0.1)} step="0.1" value={Math.min(time, Math.max(duration, 0.1))} onChange={(event) => onSeek(Number(event.target.value))} style={{'--seek-position': `${progress}%`} as CSSProperties} />
-    <div className="deck-meta"><span><b>{track?.bpm ?? '—'}</b> BPM</span><span><b>—</b> KEY</span></div>
+    <div className="deck-meta"><span><b>{track?.bpm ?? '—'}</b> BPM</span><span><b>{syncRate.toFixed(2)}×</b> RATE</span></div>
     <div className="transport"><button aria-label={`Сбросить дек ${letter}`} onClick={onStop}>↶</button><button className="play-button" aria-label={playing ? 'Пауза' : 'Воспроизвести'} onClick={onPlay} disabled={!track}>{playing ? 'Ⅱ' : '▶'}</button><button aria-label={`Выбрать трек для деки ${letter}`} onClick={() => tracks.length ? setChoosing(!choosing) : onImport()}>♫</button></div>
-    {choosing && <div className="deck-picker">{tracks.map((item) => <button key={item.id} onClick={() => { onLoad(item.id); setChoosing(false) }}>{item.name}</button>)}</div>}
+    <button className="sync-button" onClick={onSync} disabled={!track}>{`SYNC ${letter} ← ${letter === 'A' ? 'B' : 'A'}`}</button>
+    {choosing && <div className="deck-picker">{tracks.map((item) => <button key={item.id} onClick={() => onLoad(item.id)}>{item.name}</button>)}</div>}
   </article>
 }
 type BeforeInstallPromptEvent = Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }> }
