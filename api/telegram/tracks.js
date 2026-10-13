@@ -1,16 +1,27 @@
 const API = 'https://api.telegram.org'
-function send(res, status, body) { res.status(status).setHeader('Content-Type', 'application/json; charset=utf-8').setHeader('Cache-Control', 'no-store').send(JSON.stringify(body)) }
+
+function send(res, status, body) {
+  res.status(status)
+    .setHeader('Content-Type', 'application/json; charset=utf-8')
+    .setHeader('Cache-Control', 'no-store')
+    .send(JSON.stringify(body))
+}
+
 function getMedia(message) {
-  if (message.audio) return { file: message.audio, type: message.audio.mime_type || 'audio/mpeg', name: message.audio.file_name || message.caption || 'Telegram audio' }
+  if (message.audio) {
+    return { file: message.audio, type: message.audio.mime_type || 'audio/mpeg', name: message.audio.file_name || message.caption || 'Telegram audio' }
+  }
   if (message.document && (/^audio\//i.test(message.document.mime_type || '') || /\.(mp3|wav|m4a|aac|aiff?|ogg|flac|opus)$/i.test(message.document.file_name || ''))) {
     return { file: message.document, type: message.document.mime_type || 'audio/mpeg', name: message.document.file_name || message.caption || 'Telegram audio' }
   }
   return null
 }
+
 export default async function handler(req, res) {
   if (req.method !== 'GET') return send(res, 405, { error: 'Method not allowed' })
   const token = process.env.TELEGRAM_BOT_TOKEN
-  if (!token) return send(res, 503, { error: 'Добавь TELEGRAM_BOT_TOKEN в настройках Vercel и сделай бота администратором канала @dnb_selected.' })
+  if (!token) return send(res, 503, { error: 'Добавь TELEGRAM_BOT_TOKEN в настройках Vercel.' })
+
   try {
     const [meResponse, webhookResponse] = await Promise.all([
       fetch(API + '/bot' + token + '/getMe'),
@@ -18,47 +29,33 @@ export default async function handler(req, res) {
     ])
     const meData = await meResponse.json()
     const webhookData = await webhookResponse.json()
-    if (!meData.ok) return send(res, 502, { error: 'Telegram не подтвердил токен через getMe. Проверь, что в Vercel сохранён токен нужного бота.' })
-    if (!webhookData.ok) return send(res, 502, { error: 'Не удалось проверить настройки получения обновлений Telegram.' })
-    const botUsername = meData.result?.username || null
-    // Channel membership is optional: users can import audio by sending it directly to the bot.
-    let channelStatus = 'unknown'
-    try {
-      const membershipResponse = await fetch(API + '/bot' + token + '/getChatMember?chat_id=' + encodeURIComponent('@dnb_selected') + '&user_id=' + encodeURIComponent(String(meData.result.id)))
-      const membershipData = await membershipResponse.json()
-      if (membershipResponse.ok && membershipData.ok) channelStatus = membershipData.result?.status || 'unknown'
-      else channelStatus = 'unavailable'
-    } catch { channelStatus = 'unavailable' }
+    if (!meData.ok) return send(res, 502, { error: 'Telegram не подтвердил токен. Проверь TELEGRAM_BOT_TOKEN в Vercel.' })
+    if (!webhookData.ok) return send(res, 502, { error: 'Не удалось проверить настройки Telegram.' })
+
     const webhookEnabled = Boolean(webhookData.result?.url)
     const webhookPendingCount = Number(webhookData.result?.pending_update_count || 0)
-    const response = await fetch(API + '/bot' + token + '/getUpdates?timeout=0&allowed_updates=' + encodeURIComponent(JSON.stringify(['channel_post', 'edited_channel_post', 'message'])))
+    const response = await fetch(API + '/bot' + token + '/getUpdates?timeout=0&allowed_updates=' + encodeURIComponent(JSON.stringify(['message'])))
     const data = await response.json()
     if (!response.ok || !data.ok) {
       const description = data.description || 'Telegram Bot API error'
-      if (String(description).includes('webhook')) return send(res, 409, { error: 'У бота включён webhook. Для этой версии интеграции нужен getUpdates; отключи webhook у бота.' })
+      if (String(description).includes('webhook')) return send(res, 409, { error: 'У бота включён webhook. Для импорта из личного чата нужен getUpdates; отключи webhook у бота.' })
       return send(res, 502, { error: description })
     }
+
     const updates = data.result || []
     const tracks = []
     let maxUpdateId = null
-    let channelPosts = 0
-    let matchingChannelPosts = 0
-    let recognizedAudioPosts = 0
+    let privateMessages = 0
+    let recognizedAudioFiles = 0
+
     for (const update of updates) {
       maxUpdateId = Math.max(maxUpdateId ?? -1, update.update_id)
-      const post = update.channel_post || update.edited_channel_post || update.message
-      if (!post) continue
-      const isChannelUpdate = Boolean(update.channel_post || update.edited_channel_post)
-      if (isChannelUpdate) channelPosts += 1
-      const isChannelPost = isChannelUpdate && post.chat?.username?.toLowerCase() === 'dnb_selected'
-      if (isChannelPost) matchingChannelPosts += 1
-      const forwardedOrigin = post.forward_origin?.chat?.username || post.forward_from_chat?.username || ''
-      const isForwardedChannelPost = update.message && String(forwardedOrigin).toLowerCase() === 'dnb_selected'
-      const media = getMedia(post)
-      const isDirectPrivateAudio = Boolean(update.message && post.chat?.type === 'private' && media?.file?.file_id)
-      if (!isChannelPost && !isForwardedChannelPost && !isDirectPrivateAudio) continue
-      if (media?.file?.file_id) recognizedAudioPosts += 1
-      if (!media || !media.file.file_id) continue
+      const message = update.message
+      if (!message || message.chat?.type !== 'private') continue
+      privateMessages += 1
+      const media = getMedia(message)
+      if (media?.file?.file_id) recognizedAudioFiles += 1
+      if (!media?.file?.file_id) continue
       tracks.push({
         updateId: update.update_id,
         fileId: media.file.file_id,
@@ -66,19 +63,29 @@ export default async function handler(req, res) {
         type: media.type,
         size: Number(media.file.file_size || 0),
         duration: Number(media.file.duration || 0) || undefined,
-        caption: String(post.caption || '').slice(0, 500),
+        caption: String(message.caption || '').slice(0, 500),
       })
     }
 
-    // If the queue contains only unrelated messages, acknowledge them so they
-    // don't permanently block newer channel posts on subsequent getUpdates calls.
-    // Never advance beyond a candidate track: the UI must import it before acking.
+    // Consume unrelated private messages so they don't block later audio messages.
     if (tracks.length === 0 && maxUpdateId !== null) {
-      const ackResponse = await fetch(API + '/bot' + token + '/getUpdates?offset=' + (maxUpdateId + 1) + '&timeout=0&allowed_updates=' + encodeURIComponent(JSON.stringify(['channel_post', 'edited_channel_post', 'message'])))
+      const ackResponse = await fetch(API + '/bot' + token + '/getUpdates?offset=' + (maxUpdateId + 1) + '&timeout=0&allowed_updates=' + encodeURIComponent(JSON.stringify(['message'])))
       const ackData = await ackResponse.json()
-      if (!ackResponse.ok || !ackData.ok) return send(res, 502, { error: ackData.description || 'Не удалось очистить нерелевантные обновления Telegram. Попробуй ещё раз.' })
+      if (!ackResponse.ok || !ackData.ok) return send(res, 502, { error: ackData.description || 'Не удалось обработать очередь Telegram.' })
     }
-    return send(res, 200, { tracks, maxUpdateId, diagnostics: { botUsername, channelStatus, webhookEnabled, webhookPendingCount, pendingUpdates: updates.length, updateTypes: [...new Set(updates.map(update => Object.keys(update).find(key => key !== 'update_id') || 'unknown'))], channelPosts, matchingChannelPosts, recognizedAudioPosts } })
+
+    return send(res, 200, {
+      tracks,
+      maxUpdateId,
+      diagnostics: {
+        botUsername: meData.result?.username || null,
+        webhookEnabled,
+        webhookPendingCount,
+        pendingUpdates: updates.length,
+        privateMessages,
+        recognizedAudioFiles,
+      },
+    })
   } catch {
     return send(res, 502, { error: 'Не удалось связаться с Telegram. Попробуй ещё раз.' })
   }
