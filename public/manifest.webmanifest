@@ -1,13 +1,23 @@
 {
   "id": "/",
-  "name": "not-a-daw — DJ set studio",
+  "name": "not-a-daw",
   "short_name": "not-a-daw",
-  "description": "A touch-first, local-first DJ set builder.",
+  "description": "Mobile DJ mixer",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#101110",
-  "theme_color": "#101110",
+  "background_color": "#0b0c0c",
+  "theme_color": "#0b0c0c",
   "orientation": "portrait-primary",
-  "categories": ["music", "utilities"]
+  "categories": ["music", "utilities"],
+  "share_target": {
+    "action": "/share-target",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "files": [{ "name": "files", "accept": ["audio/*", ".mp3", ".wav", ".m4a", ".aac", ".aiff", ".aif", ".ogg", ".flac", ".opus"] }]
+    }
+  }
 }
