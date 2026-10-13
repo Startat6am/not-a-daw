@@ -6,6 +6,8 @@ export type LocalTrack = {
   duration?: number
   addedAt: number
   blob: Blob
+  externalId?: string
+  sourceUpdateId?: number
 }
 
 const DB_NAME = 'not-a-daw-library'
