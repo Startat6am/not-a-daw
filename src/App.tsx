@@ -61,6 +61,7 @@ export default function App() {
   const [swipedTrackId, setSwipedTrackId] = useState<string | null>(null)
   const [detailTrackId, setDetailTrackId] = useState<string | null>(null)
   const bpmAnalyzing = useRef(new Set<string>())
+  const bpmAttempted = useRef(new Set<string>())
   const audioA = useRef<HTMLAudioElement>(null)
   const audioB = useRef<HTMLAudioElement>(null)
   const loadedA = tracks.find((track) => track.id === deckA)
@@ -92,9 +93,10 @@ export default function App() {
   }, [loadedB])
 
   useEffect(() => {
-    const pending = tracks.filter((track) => !track.bpm && track.bpmStatus !== 'unavailable' && !bpmAnalyzing.current.has(track.id))
+    const pending = tracks.filter((track) => !track.bpm && !bpmAttempted.current.has(track.id) && !bpmAnalyzing.current.has(track.id))
     for (const track of pending) {
       bpmAnalyzing.current.add(track.id)
+      bpmAttempted.current.add(track.id)
       const analyzingTrack = { ...track, bpmStatus: 'pending' as const }
       setTracks((current) => current.map((item) => item.id === track.id ? analyzingTrack : item))
       void (async () => {
@@ -321,7 +323,7 @@ export default function App() {
             onTouchEnd={(event) => { const startX = touchStartX.current; const endX = event.changedTouches[0]?.clientX; if (startX !== null && endX !== undefined) { if (endX - startX > 40) setSwipedTrackId(track.id); else if (startX - endX > 40 && swipedTrackId === track.id) setSwipedTrackId(null) } touchStartX.current = null }}
             onMouseDown={(event) => { touchStartX.current = event.clientX }}
             onMouseUp={(event) => { const startX = touchStartX.current; if (startX !== null && event.clientX - startX > 40) setSwipedTrackId(track.id); else if (startX !== null && startX - event.clientX > 40 && swipedTrackId === track.id) setSwipedTrackId(null); touchStartX.current = null }}>
-            <span className="track-symbol">♫</span><div className="track-details"><strong title={track.name}>{track.name}</strong><span className="track-meta-line">{formatDuration(track.duration)} · {formatBytes(track.size)} · {formatBitrate(track.size, track.duration)} · <b className="track-bpm">BPM {track.bpm ?? (track.bpmStatus === 'pending' ? 'АНАЛИЗ…' : '—')}</b>{!track.bpm && track.bpmStatus === 'unavailable' && <button className="bpm-retry" onClick={() => { const retry = { ...track, bpmStatus: 'pending' as const }; void addTracks([retry]).then(() => setTracks((current) => current.map((item) => item.id === track.id ? retry : item))).catch(() => setError('Не удалось повторить анализ BPM')) }}>↻</button>}</span></div>
+            <span className="track-symbol">♫</span><div className="track-details"><strong title={track.name}>{track.name}</strong><span className="track-meta-line">{formatDuration(track.duration)} · {formatBytes(track.size)} · {formatBitrate(track.size, track.duration)} · <b className="track-bpm">BPM {track.bpm ?? (track.bpmStatus === 'pending' ? 'АНАЛИЗ…' : '—')}</b>{!track.bpm && track.bpmStatus === 'unavailable' && <button className="bpm-retry" onClick={() => { bpmAttempted.current.delete(track.id); const retry = { ...track, bpmStatus: 'pending' as const }; void addTracks([retry]).then(() => setTracks((current) => current.map((item) => item.id === track.id ? retry : item))).catch(() => setError('Не удалось повторить анализ BPM')) }}>↻</button>}</span></div>
             <button className={`mini-button ${deckA === track.id ? 'active-a' : ''}`} aria-label={`В дек A: ${track.name}`} onClick={() => setDeckA(track.id)}>A</button><button className={`mini-button mini-b ${deckB === track.id ? 'active-b' : ''}`} aria-label={`В дек B: ${track.name}`} onClick={() => setDeckB(track.id)}>B</button>
           </article>
         </div>)}</div>}
