@@ -8,6 +8,8 @@ export type LocalTrack = {
   blob: Blob
   externalId?: string
   sourceUpdateId?: number
+  bpm?: number
+  bpmStatus?: 'pending' | 'ready' | 'unavailable'
 }
 
 const DB_NAME = 'not-a-daw-library'
