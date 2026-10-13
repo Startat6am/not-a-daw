@@ -12,6 +12,17 @@ export default async function handler(req, res) {
   const token = process.env.TELEGRAM_BOT_TOKEN
   if (!token) return send(res, 503, { error: 'Добавь TELEGRAM_BOT_TOKEN в настройках Vercel и сделай бота администратором канала @dnb_selected.' })
   try {
+    const [meResponse, webhookResponse] = await Promise.all([
+      fetch(API + '/bot' + token + '/getMe'),
+      fetch(API + '/bot' + token + '/getWebhookInfo'),
+    ])
+    const meData = await meResponse.json()
+    const webhookData = await webhookResponse.json()
+    if (!meData.ok) return send(res, 502, { error: 'Telegram не подтвердил токен через getMe. Проверь, что в Vercel сохранён токен нужного бота.' })
+    if (!webhookData.ok) return send(res, 502, { error: 'Не удалось проверить настройки получения обновлений Telegram.' })
+    const botUsername = meData.result?.username || null
+    const webhookEnabled = Boolean(webhookData.result?.url)
+    const webhookPendingCount = Number(webhookData.result?.pending_update_count || 0)
     const response = await fetch(API + '/bot' + token + '/getUpdates?timeout=0&allowed_updates=' + encodeURIComponent(JSON.stringify(['channel_post', 'message'])))
     const data = await response.json()
     if (!response.ok || !data.ok) {
@@ -48,7 +59,7 @@ export default async function handler(req, res) {
         caption: String(post.caption || '').slice(0, 500),
       })
     }
-    return send(res, 200, { tracks, maxUpdateId, diagnostics: { pendingUpdates: updates.length, channelPosts, matchingChannelPosts, recognizedAudioPosts } })
+    return send(res, 200, { tracks, maxUpdateId, diagnostics: { botUsername, webhookEnabled, webhookPendingCount, pendingUpdates: updates.length, channelPosts, matchingChannelPosts, recognizedAudioPosts } })
   } catch {
     return send(res, 502, { error: 'Не удалось связаться с Telegram. Попробуй ещё раз.' })
   }
