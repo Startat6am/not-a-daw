@@ -173,7 +173,7 @@ export default function App() {
       {telegramOpen && <div className="telegram-feed">
         <div className="telegram-feed-head"><span>TELEGRAM · @dnb_selected</span><button aria-label="Закрыть Telegram" onClick={() => setTelegramOpen(false)}>×</button></div>
         {telegramBusy && <div className="loading-line" />}
-        {!telegramBusy && telegramTracks.filter((item) => !tracks.some((saved) => saved.externalId === item.fileId)).length === 0 && <div className="telegram-feed-empty">Нет новых аудиотреков. Бот видит новые публикации только после подключения; старые посты Telegram Bot API не отдаёт.</div>}
+        {!telegramBusy && telegramTracks.filter((item) => !tracks.some((saved) => saved.externalId === item.fileId)).length === 0 && <div className="telegram-feed-empty">Нет новых треков. Добавь бота администратором канала для новых публикаций или перешли старые треки боту в личный чат.</div>}
         {telegramTracks.filter((item) => !tracks.some((saved) => saved.externalId === item.fileId)).map((item) => <div className="telegram-feed-row" key={item.fileId}><strong title={item.name}>{item.name}</strong><button onClick={() => void importTelegramTrack(item)} disabled={telegramBusy}>↓</button></div>)}
         <div className="telegram-feed-empty"><a href="https://t.me/dnb_selected" target="_blank" rel="noreferrer">Открыть канал ↗</a></div>
       </div>}
