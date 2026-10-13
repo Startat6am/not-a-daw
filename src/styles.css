@@ -100,3 +100,26 @@
 .deck-b .waveform-caption span:last-child{color:#a77a64}
 .deck-a .waveform-caption span:last-child{color:#a9bf6d}
 @media(max-width:600px){.waveform{height:60px;margin:6px 0 3px}.waveform-caption{font-size:7px;letter-spacing:0}}
+
+
+/* Centered, zoomable DJ waveform: the playhead stays fixed while audio moves underneath. */
+.waveform{position:relative;display:block;height:96px;margin:8px 0 3px;overflow:hidden;border:1px solid #2d332f;border-radius:7px;background:linear-gradient(180deg,#111513,#171c18 48%,#111513);mask-image:none;isolation:isolate;touch-action:none;cursor:grab;user-select:none;-webkit-user-select:none}
+.waveform:active{cursor:grabbing}
+.waveform-content{position:absolute;top:0;bottom:0;pointer-events:none}
+.waveform-grid{position:absolute;inset:0;width:100%;height:100%}
+.waveform-grid i{position:absolute;top:0;bottom:0;width:1px;background:var(--lime);opacity:.2}
+.waveform-grid i.waveform-barline{width:2px;background:var(--lime);opacity:.62}
+.wave-b .waveform-grid i{background:var(--orange)}
+.wave-b .waveform-grid i.waveform-barline{background:var(--orange)}
+.waveform-bars{position:absolute;inset:3px 0;display:block;width:100%;height:auto;overflow:visible}
+.waveform-bars i{position:absolute;top:50%;bottom:auto;display:block;width:.085%;min-width:1px;max-width:3px;transform:translateY(-50%);border-radius:1px;background:var(--lime);opacity:.82;box-shadow:0 0 3px #d7ff5e25}
+.wave-b .waveform-bars i{background:var(--orange);box-shadow:0 0 3px #ff8b6225}
+.waveform-center-line{position:absolute;z-index:5;left:50%;top:0;bottom:0;width:2px;transform:translateX(-1px);background:#f4f7ef;box-shadow:0 0 6px #fff9;pointer-events:none}
+.waveform-caption{display:flex;align-items:center;justify-content:space-between;gap:5px;margin:0 1px 8px;color:#727d73;font:8px ui-monospace,monospace;letter-spacing:.3px}
+.waveform-zoom{display:flex;align-items:center;gap:5px}
+.waveform-zoom button{display:grid;place-items:center;width:23px;height:22px;padding:0;border:1px solid #39413b;border-radius:5px;background:#202522;color:#e8eee8;font-size:15px;line-height:1}
+.waveform-zoom button:disabled{opacity:.3}
+.waveform-zoom span{min-width:18px;text-align:center;color:#aab4aa}
+.deck-b .waveform-caption span:last-child{color:#ffad8e}
+.deck-a .waveform-caption span:last-child{color:#d7ff5e}
+@media(max-width:600px){.waveform{height:84px;margin:6px 0 3px}.waveform-caption{font-size:7px;letter-spacing:0}.waveform-zoom{gap:3px}.waveform-zoom button{width:21px;height:21px}}
