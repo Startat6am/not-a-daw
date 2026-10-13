@@ -12,7 +12,7 @@ export default async function handler(req, res) {
   const token = process.env.TELEGRAM_BOT_TOKEN
   if (!token) return send(res, 503, { error: 'Добавь TELEGRAM_BOT_TOKEN в настройках Vercel и сделай бота администратором канала @dnb_selected.' })
   try {
-    const response = await fetch(API + '/bot' + token + '/getUpdates?timeout=0&allowed_updates=' + encodeURIComponent(JSON.stringify(['channel_post'])))
+    const response = await fetch(API + '/bot' + token + '/getUpdates?timeout=0&allowed_updates=' + encodeURIComponent(JSON.stringify(['channel_post', 'message'])))
     const data = await response.json()
     if (!response.ok || !data.ok) {
       const description = data.description || 'Telegram Bot API error'
@@ -24,8 +24,12 @@ export default async function handler(req, res) {
     let maxUpdateId = null
     for (const update of updates) {
       maxUpdateId = Math.max(maxUpdateId ?? -1, update.update_id)
-      const post = update.channel_post
-      if (!post || post.chat?.username?.toLowerCase() !== 'dnb_selected') continue
+      const post = update.channel_post || update.message
+      if (!post) continue
+      const isChannelPost = update.channel_post && post.chat?.username?.toLowerCase() === 'dnb_selected'
+      const forwardedOrigin = post.forward_origin?.chat?.username || post.forward_from_chat?.username || ''
+      const isForwardedChannelPost = update.message && String(forwardedOrigin).toLowerCase() === 'dnb_selected'
+      if (!isChannelPost && !isForwardedChannelPost) continue
       const media = getMedia(post)
       if (!media || !media.file.file_id) continue
       tracks.push({
