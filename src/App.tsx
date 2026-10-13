@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import { addTracks, deleteTrack, getTracks, type LocalTrack } from './lib/audioLibrary'
 
 function formatDuration(seconds?: number) {
@@ -88,7 +88,7 @@ export default function App() {
     <section className="mixer" aria-label="Микшер">
       <div className="mixer-top"><span className="mixer-deck-a">A</span><span className="master-dot" /><span className="mixer-deck-b">B</span></div>
       <div className="crossfader-wrap">
-        <span>A</span><input aria-label="Кроссфейдер" type="range" min="0" max="100" value={crossfade} onChange={(e) => setCrossfade(Number(e.target.value))} style={{'--mix-position': `${crossfade}%`} as React.CSSProperties} /><span>B</span>
+        <span>A</span><input aria-label="Кроссфейдер" type="range" min="0" max="100" value={crossfade} onChange={(e) => setCrossfade(Number(e.target.value))} style={{'--mix-position': `${crossfade}%`} as CSSProperties} /><span>B</span>
       </div>
       <div className="mixer-bottom"><span>MASTER</span><span>— dB</span></div>
     </section>
