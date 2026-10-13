@@ -51,7 +51,6 @@ export async function detectBpm(blob: Blob): Promise<number | undefined> {
     const minLag = 33
     const maxLag = Math.min(100, Math.floor(frameCount / 3))
     const correlations = new Float64Array(maxLag + 1)
-    const norms = new Float64Array(maxLag + 1)
     for (let lag = minLag; lag <= maxLag; lag++) {
       let product = 0
       let leftEnergy = 0
@@ -65,7 +64,6 @@ export async function detectBpm(blob: Blob): Promise<number | undefined> {
       }
       const denom = Math.sqrt(leftEnergy * rightEnergy)
       correlations[lag] = denom > 0 ? product / denom : 0
-      norms[lag] = correlations[lag]
     }
 
     let bestLag = 0
