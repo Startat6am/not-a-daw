@@ -22,15 +22,21 @@ export default async function handler(req, res) {
     const updates = data.result || []
     const tracks = []
     let maxUpdateId = null
+    let channelPosts = 0
+    let matchingChannelPosts = 0
+    let recognizedAudioPosts = 0
     for (const update of updates) {
       maxUpdateId = Math.max(maxUpdateId ?? -1, update.update_id)
       const post = update.channel_post || update.message
       if (!post) continue
+      if (update.channel_post) channelPosts += 1
       const isChannelPost = update.channel_post && post.chat?.username?.toLowerCase() === 'dnb_selected'
+      if (isChannelPost) matchingChannelPosts += 1
       const forwardedOrigin = post.forward_origin?.chat?.username || post.forward_from_chat?.username || ''
       const isForwardedChannelPost = update.message && String(forwardedOrigin).toLowerCase() === 'dnb_selected'
       if (!isChannelPost && !isForwardedChannelPost) continue
       const media = getMedia(post)
+      if (media?.file?.file_id) recognizedAudioPosts += 1
       if (!media || !media.file.file_id) continue
       tracks.push({
         updateId: update.update_id,
@@ -42,7 +48,7 @@ export default async function handler(req, res) {
         caption: String(post.caption || '').slice(0, 500),
       })
     }
-    return send(res, 200, { tracks, maxUpdateId })
+    return send(res, 200, { tracks, maxUpdateId, diagnostics: { pendingUpdates: updates.length, channelPosts, matchingChannelPosts, recognizedAudioPosts } })
   } catch {
     return send(res, 502, { error: 'Не удалось связаться с Telegram. Попробуй ещё раз.' })
   }
