@@ -128,3 +128,5 @@
 .waveform-real{position:absolute;z-index:2;inset:3px 0;width:100%;height:calc(100% - 6px);overflow:visible;pointer-events:none}
 .waveform-real path{fill:var(--lime);fill-opacity:.8;stroke:var(--lime);stroke-width:.5;stroke-linejoin:round}
 .wave-b .waveform-real path{fill:var(--orange);stroke:var(--orange)}
+
+.waveform-loading{position:absolute;inset:0;display:grid;place-items:center;width:100%;color:#788279;text-align:center;font:8px ui-monospace,monospace;letter-spacing:1px}
