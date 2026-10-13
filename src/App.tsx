@@ -8,6 +8,8 @@ function formatDuration(seconds?: number) {
 function formatBytes(bytes: number) {
   return bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
+type TelegramTrack = { updateId: number; fileId: string; name: string; type: string; size: number; duration?: number; caption?: string }
+
 function makeId() { return `track-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}` }
 function readDuration(file: File): Promise<number | undefined> {
   return new Promise((resolve) => {
@@ -37,6 +39,10 @@ export default function App() {
   const [durationB, setDurationB] = useState(0)
   const [playingA, setPlayingA] = useState(false)
   const [playingB, setPlayingB] = useState(false)
+  const [telegramTracks, setTelegramTracks] = useState<TelegramTrack[]>([])
+  const [telegramMaxUpdateId, setTelegramMaxUpdateId] = useState<number | null>(null)
+  const [telegramOpen, setTelegramOpen] = useState(false)
+  const [telegramBusy, setTelegramBusy] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
   const audioA = useRef<HTMLAudioElement>(null)
   const audioB = useRef<HTMLAudioElement>(null)
@@ -106,6 +112,32 @@ export default function App() {
       if (deckB === track.id) setDeckB(null)
     } catch { setError('Не удалось удалить трек') }
   }
+  async function loadTelegram() {
+    setTelegramOpen(true); setTelegramBusy(true); setError('')
+    try {
+      const response = await fetch('/api/telegram/tracks', { cache: 'no-store' })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Telegram не настроен')
+      setTelegramTracks(Array.isArray(data.tracks) ? data.tracks : [])
+      setTelegramMaxUpdateId(typeof data.maxUpdateId === 'number' ? data.maxUpdateId : null)
+    } catch (e) { setError(e instanceof Error ? e.message : 'Не удалось подключиться к Telegram') }
+    finally { setTelegramBusy(false) }
+  }
+  async function importTelegramTrack(item: TelegramTrack) {
+    setTelegramBusy(true); setError('')
+    try {
+      const response = await fetch('/api/telegram/audio?fileId=' + encodeURIComponent(item.fileId))
+      if (!response.ok) { const data = await response.json().catch(() => ({})); throw new Error(data.error || 'Не удалось получить аудиофайл из Telegram') }
+      const blob = await response.blob()
+      const record: LocalTrack = { id: makeId(), name: item.name || 'Telegram audio', type: item.type || blob.type || 'audio/mpeg', size: blob.size, duration: item.duration, addedAt: Date.now(), blob, externalId: item.fileId, sourceUpdateId: item.updateId }
+      await addTracks([record])
+      const updated = await getTracks(); setTracks(updated)
+      setTelegramTracks((items) => items.filter((track) => track.fileId !== item.fileId))
+      const remaining = telegramTracks.filter((track) => track.fileId !== item.fileId && !updated.some((saved) => saved.externalId === track.fileId))
+      if (remaining.length === 0 && telegramMaxUpdateId !== null) { await fetch('/api/telegram/ack', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ offset: telegramMaxUpdateId + 1 }) }); setTelegramMaxUpdateId(null) }
+    } catch (e) { setError(e instanceof Error ? e.message : 'Не удалось импортировать трек') }
+    finally { setTelegramBusy(false) }
+  }
   async function install() {
     if (installPrompt) { await installPrompt.prompt(); setInstallPrompt(null) }
     else { setError('Добавь приложение на экран «Домой» через меню браузера.') }
@@ -137,7 +169,14 @@ export default function App() {
     </section>
 
     <section className="library-section" aria-label="Библиотека">
-      <div className="library-heading"><h2>♫</h2><span className="track-count">{tracks.length}</span><button className="icon-button add-library" aria-label="Добавить треки" onClick={() => fileInput.current?.click()} disabled={busy}>＋</button><a className="telegram-link" href="https://t.me/dnb_selected" target="_blank" rel="noreferrer" aria-label="Открыть Telegram канал">✈</a></div>
+      <div className="library-heading"><h2>♫</h2><span className="track-count">{tracks.length}</span><button className="icon-button add-library" aria-label="Добавить треки" onClick={() => fileInput.current?.click()} disabled={busy}>＋</button><button className="telegram-link" onClick={() => telegramOpen ? setTelegramOpen(false) : void loadTelegram()} aria-label="Импортировать из Telegram" disabled={telegramBusy}>✈</button></div>
+      {telegramOpen && <div className="telegram-feed">
+        <div className="telegram-feed-head"><span>TELEGRAM · @dnb_selected</span><button aria-label="Закрыть Telegram" onClick={() => setTelegramOpen(false)}>×</button></div>
+        {telegramBusy && <div className="loading-line" />}
+        {!telegramBusy && telegramTracks.filter((item) => !tracks.some((saved) => saved.externalId === item.fileId)).length === 0 && <div className="telegram-feed-empty">Нет новых аудиотреков. Бот видит новые публикации только после подключения; старые посты Telegram Bot API не отдаёт.</div>}
+        {telegramTracks.filter((item) => !tracks.some((saved) => saved.externalId === item.fileId)).map((item) => <div className="telegram-feed-row" key={item.fileId}><strong title={item.name}>{item.name}</strong><button onClick={() => void importTelegramTrack(item)} disabled={telegramBusy}>↓</button></div>)}
+        <div className="telegram-feed-empty"><a href="https://t.me/dnb_selected" target="_blank" rel="noreferrer">Открыть канал ↗</a></div>
+      </div>}
       {error && <p className="error-note" role="alert">{error}<button aria-label="Закрыть" onClick={() => setError('')}>×</button></p>}
       {busy && <div className="loading-line" />}
       {tracks.length === 0 ? <button className="empty-library" onClick={() => fileInput.current?.click()} disabled={busy}><span>＋</span></button> :
