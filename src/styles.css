@@ -81,3 +81,22 @@
 .track-details .track-meta-line{display:block;min-width:0;overflow-wrap:anywhere;line-height:1.5}
 .track-details .track-bpm{color:var(--lime);font-weight:750}
 .track-details .bpm-retry{display:inline-grid;place-items:center;margin-left:5px;width:17px;height:17px;border:1px solid #414b3a;border-radius:5px;background:#20271c;color:var(--lime);font-size:12px;vertical-align:middle}
+
+
+/* Serato-inspired readable waveform and beat grid */
+.waveform{position:relative;display:block;height:76px;margin:8px 0 3px;overflow:hidden;border:1px solid #2d332f;border-radius:7px;background:linear-gradient(180deg,#111513,#171c18 48%,#111513);mask-image:none;isolation:isolate}
+.waveform:before{content:"";position:absolute;z-index:0;inset:50% 0 auto;height:1px;background:#4a524a;opacity:.8}
+.waveform-grid{position:absolute;z-index:1;inset:0;pointer-events:none}
+.waveform-grid i{position:absolute;top:0;bottom:0;width:1px;background:#d7ff5e;opacity:.19}
+.waveform-grid i.waveform-barline{width:2px;background:#d7ff5e;opacity:.58}
+.wave-b .waveform-grid i{background:#ff8b62}
+.wave-b .waveform-grid i.waveform-barline{background:#ff8b62}
+.waveform-bars{position:absolute;z-index:2;inset:3px 2px;display:flex;align-items:center;gap:1px;overflow:hidden}
+.waveform-bars i{display:block;flex:1;min-width:1px;border-radius:1px;background:var(--lime);box-shadow:0 0 3px #d7ff5e25;transition:opacity .08s linear}
+.wave-b .waveform-bars i{background:var(--orange);box-shadow:0 0 3px #ff8b6225}
+.waveform-loading{align-self:center;width:100%;color:#788279;text-align:center;font:8px ui-monospace,monospace;letter-spacing:1px}
+.waveform-playhead{position:absolute;z-index:3;top:0;bottom:0;width:2px;background:#f4f7ef;box-shadow:0 0 5px #fff9;pointer-events:none}
+.waveform-caption{display:flex;justify-content:space-between;gap:6px;margin:0 1px 8px;color:#727d73;font:8px ui-monospace,monospace;letter-spacing:.5px}
+.deck-b .waveform-caption span:last-child{color:#a77a64}
+.deck-a .waveform-caption span:last-child{color:#a9bf6d}
+@media(max-width:600px){.waveform{height:60px;margin:6px 0 3px}.waveform-caption{font-size:7px;letter-spacing:0}}
