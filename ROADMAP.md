@@ -12,18 +12,19 @@ This file is the working product roadmap. Update checkboxes as work ships; Git c
 - [x] Keep imported Telegram tracks in the library until the user chooses a deck.
 - [x] Remove A/B quick-load buttons from Telegram rows; leave the download arrow.
 - [x] Set Telegram download progress line to 1 px.
-- [ ] Verify on production that swipe-right reliably reveals the gear and trash actions on mobile.
+- [x] Verify on production that swipe-right reveals the gear and trash actions (user confirmed actions appear).
 - [ ] Verify delete action removes the track and updates any deck currently using it.
 - [ ] Add a visible, reliable way to close swipe actions (swipe-left and/or tap elsewhere).
 
 ## Next — DJ workflow
 - [x] Confirm gear and trash actions appear on swipe.
 - [x] Make the gear action open track details with BPM, duration, size, bitrate, format, and quick-load actions.
-- [ ] Improve track selection and loading feedback for each deck.
+- [x] Improve track selection and loading feedback for each deck (loaded-track confirmation and visible picker state).
 - [x] Automatically analyze BPM after a track is added and show it in the library row and loaded deck (verified by user).
 - [ ] Add musical key detection, with graceful fallback when analysis is unavailable.
 - [ ] Improve waveform usefulness and seek accuracy.
-- [ ] Add library search and sorting (name, duration, recently added).
+- [x] Add BPM-based deck tempo sync and beat-phase alignment control (needs production verification).
+- [ ] Add library search and sorting (name, duration, recently added) — intentionally deferred by user.
 
 ## Later — reliability and polish
 - [ ] Test import/playback on mobile Safari and Android browsers with large files.
