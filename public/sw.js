@@ -1,4 +1,4 @@
-const CACHE_NAME = 'not-a-daw-shell-v3'
+const CACHE_NAME = 'not-a-daw-shell-v4'
 const APP_SHELL = ['/', '/manifest.webmanifest']
 const DB_NAME = 'not-a-daw-library'
 const STORE_NAME = 'tracks'
@@ -61,6 +61,15 @@ self.addEventListener('fetch', (event) => {
     return
   }
   if (event.request.method !== 'GET') return
+  // Always fetch navigations from the network first so a deployed app shell
+  // cannot remain stale and point at JavaScript bundles from an older build.
+  if (event.request.mode === 'navigate') {
+    event.respondWith(fetch(event.request).then((response) => {
+      if (response.ok) void caches.open(CACHE_NAME).then((cache) => cache.put('/', response.clone()))
+      return response
+    }).catch(() => caches.match('/')))
+    return
+  }
   event.respondWith(caches.match(event.request).then((cached) => {
     if (cached) return cached
     return fetch(event.request).then((response) => {
