@@ -442,6 +442,11 @@ function Deck({ letter, track, tracks, onLoad, onImport, choosing, setChoosing, 
   useEffect(() => { setZoom(18) }, [track?.id])
   const beatCount = track?.bpm && duration > 0 ? Math.floor(duration * track.bpm / 60) : 0
   const gridStride = Math.max(1, Math.ceil(beatCount / 1600))
+  const gridLines = useMemo(() => track?.bpm && duration > 0 ? Array.from({ length: Math.floor(beatCount / gridStride) + 1 }, (_, i) => {
+    const beat = i * gridStride
+    const beatTime = (track.beatOffset ?? 0) + beat * 60 / track.bpm!
+    return <i key={beat} className={beat % 4 === 0 ? 'waveform-barline' : ''} style={{ left: (beatTime * zoom) + 'px' }} />
+  }) : [], [track?.bpm, track?.beatOffset, duration, beatCount, gridStride, zoom])
   const contentWidth = Math.max(duration * zoom, 1)
   const waveformPath = useMemo(() => waveformPeaks.length
     ? 'M 0 50 ' + waveformPeaks.map((peak, i) => 'L ' + i + ' ' + (50 - peak * 46)).join(' ') + ' ' + waveformPeaks.slice().reverse().map((peak, i) => 'L ' + (waveformPeaks.length - 1 - i) + ' ' + (50 + peak * 46)).join(' ') + ' Z'
@@ -472,11 +477,7 @@ function Deck({ letter, track, tracks, onLoad, onImport, choosing, setChoosing, 
       onPointerDown={beginWaveDrag} onPointerMove={moveWaveDrag} onPointerUp={endWaveDrag} onPointerCancel={endWaveDrag}
       onKeyDown={(event) => { if (event.key === 'ArrowLeft') onSeek(Math.max(0, time - 0.1)); if (event.key === 'ArrowRight') onSeek(Math.min(duration, time + 0.1)) }}>
       <div className="waveform-content" style={{ width: `${contentWidth}px`, left: `calc(50% - ${time * zoom}px)` }}>
-        <div className="waveform-grid" aria-hidden="true">{track?.bpm && duration > 0 && Array.from({ length: Math.floor(beatCount / gridStride) + 1 }, (_, i) => {
-          const beat = i * gridStride
-          const beatTime = (track.beatOffset ?? 0) + beat * 60 / track.bpm!
-          return <i key={beat} className={beat % 4 === 0 ? 'waveform-barline' : ''} style={{ left: (beatTime * zoom) + 'px' }} />
-        })}</div>
+        <div className="waveform-grid" aria-hidden="true">{gridLines}</div>
         <>{waveformPeaks.length ? <svg className="waveform-real" viewBox={`0 0 ${Math.max(waveformPeaks.length, 1)} 100`} preserveAspectRatio="none" aria-hidden="true"><path d={waveformPath} /></svg> : <span className="waveform-loading">{track ? 'ЗАГРУЗКА ВОЛНЫ…' : 'ЗАГРУЗИ ТРЕК'}</span>}</>
       </div>
       <div className="waveform-center-line" aria-hidden="true" />
