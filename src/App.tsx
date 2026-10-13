@@ -55,6 +55,7 @@ export default function App() {
   const fileInput = useRef<HTMLInputElement>(null)
   const touchStartX = useRef<number | null>(null)
   const [swipedTrackId, setSwipedTrackId] = useState<string | null>(null)
+  const bpmAnalyzing = useRef(new Set<string>())
   const audioA = useRef<HTMLAudioElement>(null)
   const audioB = useRef<HTMLAudioElement>(null)
   const loadedA = tracks.find((track) => track.id === deckA)
@@ -85,24 +86,24 @@ export default function App() {
   }, [loadedB])
 
   useEffect(() => {
-    const pending = tracks.filter((track) => track.bpmStatus === 'pending')
-    if (!pending.length) return
-    let cancelled = false
-    void Promise.all(pending.map(async (track) => {
-      try {
-        const bpm = await detectBpm(track.blob)
-        if (cancelled) return
-        const updatedTrack: LocalTrack = { ...track, bpm, bpmStatus: bpm ? 'ready' : 'unavailable' }
-        await addTracks([updatedTrack])
-        if (!cancelled) setTracks((current) => current.map((item) => item.id === track.id ? updatedTrack : item))
-      } catch {
-        if (cancelled) return
-        const updatedTrack: LocalTrack = { ...track, bpmStatus: 'unavailable' }
-        await addTracks([updatedTrack]).catch(() => undefined)
-        if (!cancelled) setTracks((current) => current.map((item) => item.id === track.id ? updatedTrack : item))
-      }
-    }))
-    return () => { cancelled = true }
+    const pending = tracks.filter((track) => track.bpmStatus === 'pending' && !bpmAnalyzing.current.has(track.id))
+    for (const track of pending) {
+      bpmAnalyzing.current.add(track.id)
+      void (async () => {
+        let updatedTrack: LocalTrack
+        try {
+          const bpm = await detectBpm(track.blob)
+          updatedTrack = { ...track, bpm, bpmStatus: bpm ? 'ready' : 'unavailable' }
+          await addTracks([updatedTrack])
+        } catch {
+          updatedTrack = { ...track, bpmStatus: 'unavailable' }
+          await addTracks([updatedTrack]).catch(() => undefined)
+        } finally {
+          bpmAnalyzing.current.delete(track.id)
+        }
+        setTracks((current) => current.map((item) => item.id === track.id ? updatedTrack : item))
+      })()
+    }
   }, [tracks])
 
   useEffect(() => {
