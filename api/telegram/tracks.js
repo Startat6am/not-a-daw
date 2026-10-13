@@ -32,7 +32,7 @@ export default async function handler(req, res) {
     }
     const webhookEnabled = Boolean(webhookData.result?.url)
     const webhookPendingCount = Number(webhookData.result?.pending_update_count || 0)
-    const response = await fetch(API + '/bot' + token + '/getUpdates?timeout=0&allowed_updates=' + encodeURIComponent(JSON.stringify(['channel_post', 'message'])))
+    const response = await fetch(API + '/bot' + token + '/getUpdates?timeout=0&allowed_updates=' + encodeURIComponent(JSON.stringify(['channel_post', 'edited_channel_post', 'message'])))
     const data = await response.json()
     if (!response.ok || !data.ok) {
       const description = data.description || 'Telegram Bot API error'
@@ -47,10 +47,11 @@ export default async function handler(req, res) {
     let recognizedAudioPosts = 0
     for (const update of updates) {
       maxUpdateId = Math.max(maxUpdateId ?? -1, update.update_id)
-      const post = update.channel_post || update.message
+      const post = update.channel_post || update.edited_channel_post || update.message
       if (!post) continue
-      if (update.channel_post) channelPosts += 1
-      const isChannelPost = update.channel_post && post.chat?.username?.toLowerCase() === 'dnb_selected'
+      const isChannelUpdate = Boolean(update.channel_post || update.edited_channel_post)
+      if (isChannelUpdate) channelPosts += 1
+      const isChannelPost = isChannelUpdate && post.chat?.username?.toLowerCase() === 'dnb_selected'
       if (isChannelPost) matchingChannelPosts += 1
       const forwardedOrigin = post.forward_origin?.chat?.username || post.forward_from_chat?.username || ''
       const isForwardedChannelPost = update.message && String(forwardedOrigin).toLowerCase() === 'dnb_selected'
@@ -73,11 +74,11 @@ export default async function handler(req, res) {
     // don't permanently block newer channel posts on subsequent getUpdates calls.
     // Never advance beyond a candidate track: the UI must import it before acking.
     if (tracks.length === 0 && maxUpdateId !== null) {
-      const ackResponse = await fetch(API + '/bot' + token + '/getUpdates?offset=' + (maxUpdateId + 1) + '&timeout=0&allowed_updates=' + encodeURIComponent(JSON.stringify(['channel_post', 'message'])))
+      const ackResponse = await fetch(API + '/bot' + token + '/getUpdates?offset=' + (maxUpdateId + 1) + '&timeout=0&allowed_updates=' + encodeURIComponent(JSON.stringify(['channel_post', 'edited_channel_post', 'message'])))
       const ackData = await ackResponse.json()
       if (!ackResponse.ok || !ackData.ok) return send(res, 502, { error: ackData.description || 'Не удалось очистить нерелевантные обновления Telegram. Попробуй ещё раз.' })
     }
-    return send(res, 200, { tracks, maxUpdateId, diagnostics: { botUsername, webhookEnabled, webhookPendingCount, pendingUpdates: updates.length, channelPosts, matchingChannelPosts, recognizedAudioPosts } })
+    return send(res, 200, { tracks, maxUpdateId, diagnostics: { botUsername, webhookEnabled, webhookPendingCount, pendingUpdates: updates.length, updateTypes: [...new Set(updates.map(update => Object.keys(update).find(key => key !== 'update_id') || 'unknown'))], channelPosts, matchingChannelPosts, recognizedAudioPosts } })
   } catch {
     return send(res, 502, { error: 'Не удалось связаться с Telegram. Попробуй ещё раз.' })
   }
