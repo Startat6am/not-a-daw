@@ -14,16 +14,30 @@
 .telegram-track-info{display:flex;flex:1;flex-direction:column;gap:5px;min-width:0}
 .telegram-track-info>strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px}
 .telegram-feed-row .loaded-label{font-size:10px;color:#aeb8ac}
-.telegram-feed-row.loaded-on-a,.track-row.loaded-on-a{background:linear-gradient(90deg,#29331d 0%,#171b18 72%);box-shadow:inset 3px 0 var(--lime)}
-.telegram-feed-row.loaded-on-b,.track-row.loaded-on-b{background:linear-gradient(90deg,#38251d 0%,#171918 72%);box-shadow:inset 3px 0 var(--orange)}
-.telegram-feed-row.loaded-on-a.loaded-on-b,.track-row.loaded-on-a.loaded-on-b{background:linear-gradient(90deg,#29331d 0%,#38251d 100%)}
+.telegram-feed-row.loaded-on-a,.track-row.loaded-on-a{background:transparent;box-shadow:inset 3px 0 0 var(--lime)}
+.telegram-feed-row.loaded-on-b,.track-row.loaded-on-b{background:transparent;box-shadow:inset 3px 0 0 var(--orange)}
+.telegram-feed-row.loaded-on-a.loaded-on-b,.track-row.loaded-on-a.loaded-on-b{background:transparent;box-shadow:inset 3px 0 0 var(--lime)}
 .telegram-feed-row .deck-target.active-a,.mini-button.active-a{background:var(--lime);border-color:var(--lime);color:#151713}
 .telegram-feed-row .deck-target.active-b,.mini-button.active-b{background:var(--orange);border-color:var(--orange);color:#151311}
-.track-row.loaded-on-a .track-details strong{color:var(--lime)}
-.track-row.loaded-on-b .track-details strong{color:var(--orange)}
-.track-row.loaded-on-a.loaded-on-b .track-details strong{color:#f1f2e9}
+.track-row.loaded-on-a .track-details strong{color:inherit}
+.track-row.loaded-on-b .track-details strong{color:inherit}
+.track-row.loaded-on-a.loaded-on-b .track-details strong{color:inherit}
 .download-progress{width:100%;margin-top:3px}
 .download-progress-label{display:flex;justify-content:space-between;gap:8px;color:#d7ddd6;font-size:10px}
 .download-progress-track{height:5px;margin-top:6px;border-radius:8px;overflow:hidden;background:#343a36}
 .download-progress-track i{display:block;height:100%;border-radius:8px;background:var(--lime);transition:width .12s linear}
 .download-progress-size{display:block;margin-top:4px;color:#89928b;font:9px ui-monospace,monospace}
+
+
+/* Minimal deck indicator and swipe-reveal row actions */
+.track-row-shell{position:relative;overflow:hidden;border-bottom:1px solid #292d2a;background:#151817;isolation:isolate}
+.track-row-shell:last-child{border-bottom:0}
+.track-row-shell .track-row{position:relative;z-index:1;width:100%;border-bottom:0;transition:transform .2s ease;touch-action:pan-y;user-select:none}
+.track-row-shell .track-row.swiped{transform:translateX(25%)}
+.track-row-actions{position:absolute;inset:0 auto 0 0;width:25%;display:grid;grid-template-columns:1fr 1fr;align-items:center;justify-items:center;background:#202421}
+.track-row-actions button{display:grid;place-items:center;width:100%;height:100%;border:0;background:transparent;color:#a8b0a8;font-size:17px}
+.track-row-actions .trash-action{color:#ff8b62}
+.telegram-bitrate{color:#858d87;font:10px ui-monospace,monospace}
+.track-row .mini-button{font-size:11px;font-weight:650}
+.track-row .mini-button.active-a,.track-row .mini-button.active-b{background:#202522;border-color:#424940;color:#aeb5af}
+@media(max-width:600px){.track-row-actions button{font-size:15px}.telegram-bitrate{font-size:9px}}
