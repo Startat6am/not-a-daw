@@ -41,7 +41,8 @@ export default function App() {
   const [playingB, setPlayingB] = useState(false)
   const [telegramTracks, setTelegramTracks] = useState<TelegramTrack[]>([])
   const [telegramMaxUpdateId, setTelegramMaxUpdateId] = useState<number | null>(null)
-  const [telegramDiagnostics, setTelegramDiagnostics] = useState<{ botUsername: string | null; webhookEnabled: boolean; webhookPendingCount: number; pendingUpdates: number; channelPosts: number; matchingChannelPosts: number; recognizedAudioPosts: number } | null>(null)
+  const [telegramDiagnostics, setTelegramDiagnostics] = useState<{ botUsername: string | null; webhookEnabled: boolean; webhookPendingCount: number; pendingUpdates: number; privateMessages: number; recognizedAudioFiles: number } | null>(null)
+  const [downloadProgress, setDownloadProgress] = useState<{ fileId: string; loaded: number; total: number; stage: 'downloading' | 'saving' } | null>(null)
   const [telegramOpen, setTelegramOpen] = useState(false)
   const [telegramBusy, setTelegramBusy] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
@@ -84,7 +85,9 @@ export default function App() {
     const source = which === 'A' ? srcA : srcB
     if (!audio || !source) { setError('Сначала добавь трек и загрузи его в дек'); return }
     if (!audio.paused) { audio.pause(); return }
-    try { await audio.play(); setError('') } catch { setError('Не удалось воспроизвести файл. Попробуй MP3, WAV или M4A.') }
+    const mix = crossfade / 100
+    audio.volume = which === 'A' ? Math.cos(mix * Math.PI / 2) : Math.sin(mix * Math.PI / 2)
+    try { await audio.play(); setError('') } catch { setError(`Дека ${which}: браузер не смог запустить аудио. Проверь формат файла и громкость устройства.`) }
   }
   function seek(which: 'A' | 'B', value: number) {
     const audio = which === 'A' ? audioA.current : audioB.current
@@ -130,10 +133,43 @@ export default function App() {
   }
   async function importTelegramTrack(item: TelegramTrack, targetDeck?: 'A' | 'B') {
     setTelegramBusy(true); setError('')
+    setDownloadProgress({ fileId: item.fileId, loaded: 0, total: item.size || 0, stage: 'downloading' })
     try {
-      const response = await fetch('/api/telegram/audio?fileId=' + encodeURIComponent(item.fileId))
+      const existing = tracks.find((saved) => saved.externalId === item.fileId)
+      if (existing) {
+        if (targetDeck === 'A') setDeckA(existing.id)
+        else if (targetDeck === 'B') setDeckB(existing.id)
+        else if (!deckA) setDeckA(existing.id)
+        else if (!deckB) setDeckB(existing.id)
+        setTelegramBusy(false)
+        setDownloadProgress(null)
+        return
+      }
+
+      const response = await fetch('/api/telegram/audio?fileId=' + encodeURIComponent(item.fileId), { cache: 'no-store' })
       if (!response.ok) { const data = await response.json().catch(() => ({})); throw new Error(data.error || 'Не удалось получить аудиофайл из Telegram') }
-      const blob = await response.blob()
+      const total = Number(response.headers.get('content-length') || item.size || 0)
+      let blob: Blob
+      if (response.body) {
+        const reader = response.body.getReader()
+        const chunks: Uint8Array[] = []
+        let loaded = 0
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          if (value) {
+            chunks.push(value)
+            loaded += value.byteLength
+            setDownloadProgress({ fileId: item.fileId, loaded, total, stage: 'downloading' })
+          }
+        }
+        blob = new Blob(chunks as unknown as BlobPart[], { type: response.headers.get('content-type') || item.type || 'audio/mpeg' })
+      } else {
+        blob = await response.blob()
+        setDownloadProgress({ fileId: item.fileId, loaded: blob.size, total: blob.size, stage: 'downloading' })
+      }
+
+      setDownloadProgress({ fileId: item.fileId, loaded: blob.size, total: blob.size || total, stage: 'saving' })
       const record: LocalTrack = { id: makeId(), name: item.name || 'Telegram audio', type: item.type || blob.type || 'audio/mpeg', size: blob.size, duration: item.duration, addedAt: Date.now(), blob, externalId: item.fileId, sourceUpdateId: item.updateId }
       await addTracks([record])
       const updated = await getTracks(); setTracks(updated)
@@ -141,11 +177,14 @@ export default function App() {
       else if (targetDeck === 'B') setDeckB(record.id)
       else if (!deckA) setDeckA(record.id)
       else if (!deckB) setDeckB(record.id)
-      setTelegramTracks((items) => items.filter((track) => track.fileId !== item.fileId))
+
       const remaining = telegramTracks.filter((track) => track.fileId !== item.fileId && !updated.some((saved) => saved.externalId === track.fileId))
-      if (remaining.length === 0 && telegramMaxUpdateId !== null) { await fetch('/api/telegram/ack', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ offset: telegramMaxUpdateId + 1 }) }); setTelegramMaxUpdateId(null) }
+      if (remaining.length === 0 && telegramMaxUpdateId !== null) {
+        await fetch('/api/telegram/ack', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ offset: telegramMaxUpdateId + 1 }) })
+        setTelegramMaxUpdateId(null)
+      }
     } catch (e) { setError(e instanceof Error ? e.message : 'Не удалось импортировать трек') }
-    finally { setTelegramBusy(false) }
+    finally { setTelegramBusy(false); setDownloadProgress(null) }
   }
   async function install() {
     if (installPrompt) { await installPrompt.prompt(); setInstallPrompt(null) }
@@ -180,18 +219,31 @@ export default function App() {
     <section className="library-section" aria-label="Библиотека">
       <div className="library-heading"><h2>♫</h2><span className="track-count">{tracks.length}</span><button className="icon-button add-library" aria-label="Добавить треки" onClick={() => fileInput.current?.click()} disabled={busy}>＋</button><button className="telegram-link" onClick={() => telegramOpen ? setTelegramOpen(false) : void loadTelegram()} aria-label="Импортировать из Telegram" disabled={telegramBusy}>✈ <span>Telegram</span></button></div>
       {telegramOpen && <div className="telegram-feed">
-        <div className="telegram-feed-head"><span>TELEGRAM · @dnb_selected</span><button aria-label="Закрыть Telegram" onClick={() => setTelegramOpen(false)}>×</button></div>
+        <div className="telegram-feed-head"><span>TELEGRAM · ЛИЧНЫЙ ЧАТ С БОТОМ</span><button aria-label="Закрыть Telegram" onClick={() => setTelegramOpen(false)}>×</button></div>
         {telegramBusy && <div className="loading-line" />}
-        {!telegramBusy && telegramTracks.filter((item) => !tracks.some((saved) => saved.externalId === item.fileId)).length === 0 && <div className="telegram-feed-empty">Нет новых треков. {telegramDiagnostics ? `Бот: @${telegramDiagnostics.botUsername || 'не определён'}; webhook: ${telegramDiagnostics.webhookEnabled ? 'включён' : 'выключен'}; в очереди webhook: ${telegramDiagnostics.webhookPendingCount}; обновлений от Telegram — ${telegramDiagnostics.pendingUpdates}; публикаций каналов — ${telegramDiagnostics.channelPosts}; публикаций @dnb_selected — ${telegramDiagnostics.matchingChannelPosts}; распознанных аудиофайлов — ${telegramDiagnostics.recognizedAudioPosts}.` : ''} Если обновлений 0 — проверь, что токен принадлежит нужному боту и другой сервис не забирает обновления. Если публикации есть, но аудио 0 — проверь, что треки отправлены как аудиофайл или документ, а не ссылкой.</div>}
-        {telegramTracks.filter((item) => !tracks.some((saved) => saved.externalId === item.fileId)).map((item) => <div className="telegram-feed-row" key={item.fileId}><strong title={item.name}>{item.name}</strong><button aria-label={`Загрузить ${item.name} в дек A`} onClick={() => void importTelegramTrack(item, 'A')} disabled={telegramBusy}>A</button><button aria-label={`Загрузить ${item.name} в дек B`} onClick={() => void importTelegramTrack(item, 'B')} disabled={telegramBusy}>B</button><button aria-label={`Добавить ${item.name} в библиотеку`} onClick={() => void importTelegramTrack(item)} disabled={telegramBusy}>↓</button></div>)}
-        <div className="telegram-feed-empty"><a href="https://t.me/dnb_selected" target="_blank" rel="noreferrer">Открыть канал ↗</a></div>
+        {!telegramBusy && telegramTracks.filter((item) => !tracks.some((saved) => saved.externalId === item.fileId)).length === 0 && <div className="telegram-feed-empty">Новых аудиофайлов нет. {telegramDiagnostics ? `Бот: @${telegramDiagnostics.botUsername || 'не определён'}; webhook: ${telegramDiagnostics.webhookEnabled ? 'включён' : 'выключен'}; ожидают в очереди: ${telegramDiagnostics.webhookPendingCount}; обновлений — ${telegramDiagnostics.pendingUpdates}; личных сообщений — ${telegramDiagnostics.privateMessages}; распознанных аудиофайлов — ${telegramDiagnostics.recognizedAudioFiles}.` : ''} Отправь MP3 прямо в личный чат с ботом как аудио или файл, затем обнови список.</div>}
+        {telegramTracks.map((item) => {
+          const saved = tracks.find((track) => track.externalId === item.fileId)
+          const onA = Boolean(saved && deckA === saved.id)
+          const onB = Boolean(saved && deckB === saved.id)
+          const progress = downloadProgress?.fileId === item.fileId ? downloadProgress : null
+          return <div className={`telegram-feed-row ${onA ? 'loaded-on-a' : ''} ${onB ? 'loaded-on-b' : ''}`} key={item.fileId}>
+            <div className="telegram-track-info"><strong title={item.name}>{item.name}</strong>{saved && <span className="loaded-label">{onA && onB ? 'В деках A + B' : onA ? 'Загружен в деку A' : onB ? 'Загружен в деку B' : 'В библиотеке'}</span>}
+              {progress && <div className="download-progress"><div className="download-progress-label"><span>{progress.stage === 'saving' ? 'Сохранение в библиотеку…' : 'Скачивание из Telegram…'}</span><span>{progress.total ? `${Math.min(100, Math.round(progress.loaded / progress.total * 100))}%` : formatBytes(progress.loaded)}</span></div><div className="download-progress-track"><i style={{ width: progress.stage === 'saving' ? '100%' : progress.total ? `${Math.min(100, progress.loaded / progress.total * 100)}%` : '35%' }} /></div><span className="download-progress-size">{formatBytes(progress.loaded)} / {progress.total ? formatBytes(progress.total) : 'размер неизвестен'}</span></div>}
+            </div>
+            <button className={onA ? 'deck-target active-a' : ''} aria-label={`Загрузить ${item.name} в дек A`} onClick={() => void importTelegramTrack(item, 'A')} disabled={telegramBusy}>{onA ? '✓ A' : 'A'}</button>
+            <button className={onB ? 'deck-target active-b' : ''} aria-label={`Загрузить ${item.name} в дек B`} onClick={() => void importTelegramTrack(item, 'B')} disabled={telegramBusy}>{onB ? '✓ B' : 'B'}</button>
+            <button aria-label={`Добавить ${item.name} в библиотеку`} onClick={() => void importTelegramTrack(item)} disabled={telegramBusy}>{saved ? '✓' : '↓'}</button>
+          </div>
+        })}
+        <div className="telegram-feed-empty"><a href="https://t.me/notadawbot" target="_blank" rel="noreferrer">Открыть чат с ботом ↗</a></div>
       </div>}
       {error && <p className="error-note" role="alert">{error}<button aria-label="Закрыть" onClick={() => setError('')}>×</button></p>}
       {busy && <div className="loading-line" />}
       {tracks.length === 0 ? <button className="empty-library" onClick={() => fileInput.current?.click()} disabled={busy}><span>＋</span></button> :
-        <div className="track-list">{tracks.map((track) => <article className="track-row" key={track.id}>
+        <div className="track-list">{tracks.map((track) => <article className={`track-row ${deckA === track.id ? 'loaded-on-a' : ''} ${deckB === track.id ? 'loaded-on-b' : ''}`} key={track.id}>
           <span className="track-symbol">♫</span><div className="track-details"><strong title={track.name}>{track.name}</strong><span>{formatDuration(track.duration)} · {formatBytes(track.size)}</span></div>
-          <button className="mini-button" aria-label={`В дек A: ${track.name}`} onClick={() => setDeckA(track.id)}>A</button><button className="mini-button mini-b" aria-label={`В дек B: ${track.name}`} onClick={() => setDeckB(track.id)}>B</button><button className="remove-button" aria-label={`Удалить ${track.name}`} onClick={() => void removeTrack(track)}>×</button>
+          <button className={`mini-button ${deckA === track.id ? 'active-a' : ''}`} aria-label={`В дек A: ${track.name}`} onClick={() => setDeckA(track.id)}>{deckA === track.id ? '✓ A' : 'A'}</button><button className={`mini-button mini-b ${deckB === track.id ? 'active-b' : ''}`} aria-label={`В дек B: ${track.name}`} onClick={() => setDeckB(track.id)}>{deckB === track.id ? '✓ B' : 'B'}</button><button className="remove-button" aria-label={`Удалить ${track.name}`} onClick={() => void removeTrack(track)}>×</button>
         </article>)}</div>}
     </section>
     <footer><span className="wordmark"><span className="brand-mark">n</span><span>not-a-daw</span></span><span className="local-indicator"><i /> LOCAL</span></footer>
