@@ -21,6 +21,15 @@ export default async function handler(req, res) {
     if (!meData.ok) return send(res, 502, { error: 'Telegram не подтвердил токен через getMe. Проверь, что в Vercel сохранён токен нужного бота.' })
     if (!webhookData.ok) return send(res, 502, { error: 'Не удалось проверить настройки получения обновлений Telegram.' })
     const botUsername = meData.result?.username || null
+    const membershipResponse = await fetch(API + '/bot' + token + '/getChatMember?chat_id=' + encodeURIComponent('@dnb_selected') + '&user_id=' + encodeURIComponent(String(meData.result.id)))
+    const membershipData = await membershipResponse.json()
+    if (!membershipResponse.ok || !membershipData.ok) {
+      return send(res, 409, { error: 'Токен бота верный, но Telegram не подтверждает доступ к каналу @dnb_selected. Добавь именно @' + botUsername + ' администратором этого канала и попробуй снова.' })
+    }
+    const channelStatus = membershipData.result?.status
+    if (channelStatus !== 'administrator' && channelStatus !== 'creator') {
+      return send(res, 409, { error: 'Бот @' + botUsername + ' сейчас не администратор @dnb_selected (статус: ' + String(channelStatus || 'неизвестен') + '). Добавь его администратором именно этого канала, затем нажми Telegram ещё раз.' })
+    }
     const webhookEnabled = Boolean(webhookData.result?.url)
     const webhookPendingCount = Number(webhookData.result?.pending_update_count || 0)
     const response = await fetch(API + '/bot' + token + '/getUpdates?timeout=0&allowed_updates=' + encodeURIComponent(JSON.stringify(['channel_post', 'message'])))
