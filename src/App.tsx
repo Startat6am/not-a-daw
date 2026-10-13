@@ -241,7 +241,7 @@ export default function App() {
             </div>
             <button className={onA ? 'deck-target active-a' : ''} aria-label={`Загрузить ${item.name} в дек A`} onClick={() => void importTelegramTrack(item, 'A')} disabled={telegramBusy}>A</button>
             <button className={onB ? 'deck-target active-b' : ''} aria-label={`Загрузить ${item.name} в дек B`} onClick={() => void importTelegramTrack(item, 'B')} disabled={telegramBusy}>B</button>
-            <button aria-label={`Добавить ${item.name} в библиотеку`} onClick={() => void importTelegramTrack(item)} disabled={telegramBusy}>{saved ? '✓' : '↓'}</button>
+            <button aria-label={`Добавить ${item.name} в библиотеку`} onClick={() => void importTelegramTrack(item)} disabled={telegramBusy}>↓</button>
           </div>
         })}
         <div className="telegram-feed-empty"><a href="https://t.me/notadawbot" target="_blank" rel="noreferrer">Открыть чат с ботом ↗</a></div>
@@ -252,7 +252,7 @@ export default function App() {
         <div className="track-list">{tracks.map((track) => <div className="track-row-shell" key={track.id}>
           <div className="track-row-actions">
             <button aria-label={`Настройки ${track.name}`} title="Настройки (скоро)">⚙</button>
-            <button className="trash-action" aria-label={`Удалить ${track.name}`} title="Удалить трек" onClick={() => { void removeTrack(track); setSwipedTrackId(null) }}>♲</button>
+            <button className="trash-action" aria-label={`Удалить ${track.name}`} title="Удалить трек" onClick={() => { void removeTrack(track); setSwipedTrackId(null) }}>🗑</button>
           </div>
           <article className={`track-row ${deckA === track.id ? 'loaded-on-a' : ''} ${deckB === track.id ? 'loaded-on-b' : ''} ${swipedTrackId === track.id ? 'swiped' : ''}`}
             onTouchStart={(event) => { touchStartX.current = event.touches[0]?.clientX ?? null }}
