@@ -41,6 +41,7 @@ export default function App() {
   const [playingB, setPlayingB] = useState(false)
   const [telegramTracks, setTelegramTracks] = useState<TelegramTrack[]>([])
   const [telegramMaxUpdateId, setTelegramMaxUpdateId] = useState<number | null>(null)
+  const [telegramDiagnostics, setTelegramDiagnostics] = useState<{ pendingUpdates: number; channelPosts: number; matchingChannelPosts: number; recognizedAudioPosts: number } | null>(null)
   const [telegramOpen, setTelegramOpen] = useState(false)
   const [telegramBusy, setTelegramBusy] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
@@ -123,6 +124,7 @@ export default function App() {
       if (!response.ok) throw new Error(data.error || 'Telegram не настроен')
       setTelegramTracks(Array.isArray(data.tracks) ? data.tracks : [])
       setTelegramMaxUpdateId(typeof data.maxUpdateId === 'number' ? data.maxUpdateId : null)
+      setTelegramDiagnostics(data.diagnostics && typeof data.diagnostics === 'object' ? data.diagnostics : null)
     } catch (e) { setError(e instanceof Error ? e.message : 'Не удалось подключиться к Telegram') }
     finally { setTelegramBusy(false) }
   }
@@ -180,7 +182,7 @@ export default function App() {
       {telegramOpen && <div className="telegram-feed">
         <div className="telegram-feed-head"><span>TELEGRAM · @dnb_selected</span><button aria-label="Закрыть Telegram" onClick={() => setTelegramOpen(false)}>×</button></div>
         {telegramBusy && <div className="loading-line" />}
-        {!telegramBusy && telegramTracks.filter((item) => !tracks.some((saved) => saved.externalId === item.fileId)).length === 0 && <div className="telegram-feed-empty">Нет новых треков. Добавь бота администратором канала для новых публикаций или перешли старые треки боту в личный чат.</div>}
+        {!telegramBusy && telegramTracks.filter((item) => !tracks.some((saved) => saved.externalId === item.fileId)).length === 0 && <div className="telegram-feed-empty">Нет новых треков. {telegramDiagnostics ? `Диагностика: обновлений от Telegram — ${telegramDiagnostics.pendingUpdates}; публикаций каналов — ${telegramDiagnostics.channelPosts}; публикаций @dnb_selected — ${telegramDiagnostics.matchingChannelPosts}; распознанных аудиофайлов — ${telegramDiagnostics.recognizedAudioPosts}.` : ''} Если обновлений 0 — проверь, что токен принадлежит нужному боту и другой сервис не забирает обновления. Если публикации есть, но аудио 0 — проверь, что треки отправлены как аудиофайл или документ, а не ссылкой.</div>}
         {telegramTracks.filter((item) => !tracks.some((saved) => saved.externalId === item.fileId)).map((item) => <div className="telegram-feed-row" key={item.fileId}><strong title={item.name}>{item.name}</strong><button aria-label={`Загрузить ${item.name} в дек A`} onClick={() => void importTelegramTrack(item, 'A')} disabled={telegramBusy}>A</button><button aria-label={`Загрузить ${item.name} в дек B`} onClick={() => void importTelegramTrack(item, 'B')} disabled={telegramBusy}>B</button><button aria-label={`Добавить ${item.name} в библиотеку`} onClick={() => void importTelegramTrack(item)} disabled={telegramBusy}>↓</button></div>)}
         <div className="telegram-feed-empty"><a href="https://t.me/dnb_selected" target="_blank" rel="noreferrer">Открыть канал ↗</a></div>
       </div>}
