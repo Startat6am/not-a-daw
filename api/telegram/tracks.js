@@ -2,7 +2,7 @@ const API = 'https://api.telegram.org'
 function send(res, status, body) { res.status(status).setHeader('Content-Type', 'application/json; charset=utf-8').setHeader('Cache-Control', 'no-store').send(JSON.stringify(body)) }
 function getMedia(message) {
   if (message.audio) return { file: message.audio, type: message.audio.mime_type || 'audio/mpeg', name: message.audio.file_name || message.caption || 'Telegram audio' }
-  if (message.document && (/^audio\//i.test(message.document.mime_type || '') || /\.(mp3|wav|m4a|aac|aiff?|ogg|flac|opus)$/i.test(message.document.file_name || ''))) {
+  if (message.document && (/^audio\\//i.test(message.document.mime_type || '') || /\\.(mp3|wav|m4a|aac|aiff?|ogg|flac|opus)$/i.test(message.document.file_name || ''))) {
     return { file: message.document, type: message.document.mime_type || 'audio/mpeg', name: message.document.file_name || message.caption || 'Telegram audio' }
   }
   return null
@@ -58,6 +58,15 @@ export default async function handler(req, res) {
         duration: Number(media.file.duration || 0) || undefined,
         caption: String(post.caption || '').slice(0, 500),
       })
+    }
+
+    // If the queue contains only unrelated messages, acknowledge them so they
+    // don't permanently block newer channel posts on subsequent getUpdates calls.
+    // Never advance beyond a candidate track: the UI must import it before acking.
+    if (tracks.length === 0 && maxUpdateId !== null) {
+      const ackResponse = await fetch(API + '/bot' + token + '/getUpdates?offset=' + (maxUpdateId + 1) + '&timeout=0&allowed_updates=' + encodeURIComponent(JSON.stringify(['channel_post', 'message'])))
+      const ackData = await ackResponse.json()
+      if (!ackResponse.ok || !ackData.ok) return send(res, 502, { error: ackData.description || 'Не удалось очистить нерелевантные обновления Telegram. Попробуй ещё раз.' })
     }
     return send(res, 200, { tracks, maxUpdateId, diagnostics: { botUsername, webhookEnabled, webhookPendingCount, pendingUpdates: updates.length, channelPosts, matchingChannelPosts, recognizedAudioPosts } })
   } catch {
