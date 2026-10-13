@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type PointerEvent } from 'react'
 import { addTracks, deleteTrack, getTracks, type LocalTrack } from './lib/audioLibrary'
 import { detectBpm } from './lib/bpm'
 
@@ -405,7 +405,7 @@ function Deck({ letter, track, tracks, onLoad, onImport, choosing, setChoosing, 
   const gridStride = Math.max(1, Math.ceil(beatCount / 1600))
   const contentWidth = Math.max(duration * zoom, 1)
   const waveformStyle = { '--wave-content-width': `${contentWidth}px`, '--wave-offset': `calc(50% - ${time * zoom}px)` } as CSSProperties
-  function beginWaveDrag(event: React.PointerEvent<HTMLDivElement>) {
+  function beginWaveDrag(event: PointerEvent<HTMLDivElement>) {
     if (!track || !duration) return
     dragRef.current = { x: event.clientX, time, pointerId: event.pointerId }
     event.currentTarget.setPointerCapture(event.pointerId)
