@@ -18,12 +18,12 @@ This file is the working product roadmap. Update checkboxes as work ships; Git c
 
 ## Next — DJ workflow
 - [x] Confirm gear and trash actions appear on swipe.
-- [x] Make the gear action open track details with BPM, duration, size, bitrate, format, and quick-load actions.
+- [ ] Verify and fix the gear action opening track details on touch devices.
 - [x] Improve track selection and loading feedback for each deck (loaded-track confirmation and visible picker state).
-- [x] Automatically analyze BPM after a track is added and show it in the library row and loaded deck (verified by user).
+- [ ] Verify BPM detection on imported files; detector updated and existing tracks will be re-analyzed.
 - [ ] Add musical key detection, with graceful fallback when analysis is unavailable.
 - [ ] Improve waveform usefulness and seek accuracy.
-- [x] Add BPM-based deck tempo sync and beat-phase alignment control (needs production verification).
+- [ ] Add BPM-based deck tempo sync and beat-phase alignment control (needs production verification).
 - [ ] Add library search and sorting (name, duration, recently added) — intentionally deferred by user.
 
 ## Later — reliability and polish
