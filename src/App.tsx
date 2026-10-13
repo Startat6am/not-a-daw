@@ -147,8 +147,7 @@ export default function App() {
       if (existing) {
         if (targetDeck === 'A') setDeckA(existing.id)
         else if (targetDeck === 'B') setDeckB(existing.id)
-        else if (!deckA) setDeckA(existing.id)
-        else if (!deckB) setDeckB(existing.id)
+
         setTelegramBusy(false)
         setDownloadProgress(null)
         return
@@ -183,8 +182,7 @@ export default function App() {
       const updated = await getTracks(); setTracks(updated)
       if (targetDeck === 'A') setDeckA(record.id)
       else if (targetDeck === 'B') setDeckB(record.id)
-      else if (!deckA) setDeckA(record.id)
-      else if (!deckB) setDeckB(record.id)
+
 
       const remaining = telegramTracks.filter((track) => track.fileId !== item.fileId && !updated.some((saved) => saved.externalId === track.fileId))
       if (remaining.length === 0 && telegramMaxUpdateId !== null) {
@@ -239,9 +237,7 @@ export default function App() {
             <div className="telegram-track-info"><strong title={item.name}>{item.name}</strong><span className="telegram-bitrate">{formatBitrate(item.size, item.duration)}</span>
               {progress && <div className="download-progress"><div className="download-progress-label"><span>{progress.stage === 'saving' ? 'Сохранение в библиотеку…' : 'Скачивание из Telegram…'}</span><span>{progress.total ? `${Math.min(100, Math.round(progress.loaded / progress.total * 100))}%` : formatBytes(progress.loaded)}</span></div><div className="download-progress-track"><i style={{ width: progress.stage === 'saving' ? '100%' : progress.total ? `${Math.min(100, progress.loaded / progress.total * 100)}%` : '35%' }} /></div><span className="download-progress-size">{formatBytes(progress.loaded)} / {progress.total ? formatBytes(progress.total) : 'размер неизвестен'}</span></div>}
             </div>
-            <button className={onA ? 'deck-target active-a' : ''} aria-label={`Загрузить ${item.name} в дек A`} onClick={() => void importTelegramTrack(item, 'A')} disabled={telegramBusy}>A</button>
-            <button className={onB ? 'deck-target active-b' : ''} aria-label={`Загрузить ${item.name} в дек B`} onClick={() => void importTelegramTrack(item, 'B')} disabled={telegramBusy}>B</button>
-            <button aria-label={`Добавить ${item.name} в библиотеку`} onClick={() => void importTelegramTrack(item)} disabled={telegramBusy}>↓</button>
+            <button aria-label={`Скачать ${item.name} в библиотеку`} onClick={() => void importTelegramTrack(item)} disabled={telegramBusy}>↓</button>
           </div>
         })}
         <div className="telegram-feed-empty"><a href="https://t.me/notadawbot" target="_blank" rel="noreferrer">Открыть чат с ботом ↗</a></div>
