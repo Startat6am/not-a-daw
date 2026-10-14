@@ -339,8 +339,11 @@ export default function App() {
       setSyncFeedback('Для Sync нужен определённый BPM у обоих треков.')
       return
     }
-    const sourceBeat = sourceTrack.beatPeriod ?? 60 / sourceTrack.bpm
-    const targetBeat = targetTrack.beatPeriod ?? 60 / targetTrack.bpm
+    // Keep tempo, grid spacing, and sync rate on one canonical BPM-derived period.
+    // The analyzer's sub-BPM interval estimate can differ from the displayed integer BPM
+    // and accumulate visible drift over several bars.
+    const sourceBeat = 60 / sourceTrack.bpm
+    const targetBeat = 60 / targetTrack.bpm
     const rate = targetBeat / sourceBeat
     if (rate < 0.5 || rate > 2) {
       setSyncFeedback('Разница BPM слишком большая для безопасной синхронизации (диапазон 0.5×–2×).')
@@ -603,7 +606,7 @@ function Deck({ letter, track, tracks, onLoad, onImport, choosing, setChoosing, 
   const gridStride = Math.max(1, Math.ceil(beatCount / 1600))
   const gridLines = useMemo(() => track?.bpm && duration > 0 ? Array.from({ length: Math.floor(beatCount / gridStride) + 1 }, (_, i) => {
     const beat = i * gridStride
-    const beatTime = (track.beatOffset ?? 0) + gridNudge + beat * (track.beatPeriod ?? 60 / track.bpm!)
+    const beatTime = (track.beatOffset ?? 0) + gridNudge + beat * (60 / track.bpm!)
     return <i key={beat} className={beat === 0 ? 'waveform-downbeat' : beat % 4 === 0 ? 'waveform-barline' : ''} style={{ left: (beatTime * zoom) + 'px' }} />
   }) : [], [track?.bpm, track?.beatPeriod, track?.beatOffset, gridNudge, duration, beatCount, gridStride, zoom])
   const contentWidth = Math.max(duration * zoom, 1)
