@@ -541,6 +541,7 @@ function Deck({ letter, track, tracks, onLoad, onImport, choosing, setChoosing, 
   const [waveformPeaks, setWaveformPeaks] = useState<WaveformPyramid | null>(null)
   const [zoom, setZoom] = useState(18)
   const [anchorTime, setAnchorTime] = useState(0)
+  const [gridNudge, setGridNudge] = useState(0)
   const dragRef = useRef<{ x: number; time: number; pointerId: number } | null>(null)
   useEffect(() => {
     let active = true
@@ -554,14 +555,14 @@ function Deck({ letter, track, tracks, onLoad, onImport, choosing, setChoosing, 
     }
     return () => { active = false }
   }, [track?.id, track?.blob])
-  useEffect(() => { setZoom(18); setAnchorTime(0) }, [track?.id])
+  useEffect(() => { setZoom(18); setAnchorTime(0); setGridNudge(0) }, [track?.id])
   const beatCount = track?.bpm && duration > 0 ? Math.floor(duration * track.bpm / 60) : 0
   const gridStride = Math.max(1, Math.ceil(beatCount / 1600))
   const gridLines = useMemo(() => track?.bpm && duration > 0 ? Array.from({ length: Math.floor(beatCount / gridStride) + 1 }, (_, i) => {
     const beat = i * gridStride
-    const beatTime = (track.beatOffset ?? 0) + beat * 60 / track.bpm!
+    const beatTime = (track.beatOffset ?? 0) + gridNudge + beat * 60 / track.bpm!
     return <i key={beat} className={beat % 4 === 0 ? 'waveform-barline' : ''} style={{ left: (beatTime * zoom) + 'px' }} />
-  }) : [], [track?.bpm, track?.beatOffset, duration, beatCount, gridStride, zoom])
+  }) : [], [track?.bpm, track?.beatOffset, gridNudge, duration, beatCount, gridStride, zoom])
   const contentWidth = Math.max(duration * zoom, 1)
     const waveformStyle = { '--wave-content-width': `${contentWidth}px`, '--wave-offset': `calc(50% - ${time * zoom}px)` } as CSSProperties
   function beginWaveDrag(event: PointerEvent<HTMLDivElement>) {
@@ -596,7 +597,7 @@ function Deck({ letter, track, tracks, onLoad, onImport, choosing, setChoosing, 
       <div className="waveform-anchor-line" style={{ left: `calc(50% + ${(anchorTime - time) * zoom}px)` }} aria-label={`Якорь ${formatDuration(anchorTime)}`} title={`Якорь ${formatDuration(anchorTime)}`} />
       <div className="waveform-center-line" aria-hidden="true" />
     </div>
-    <div className="waveform-caption"><span>{formatDuration(time)} · ЯКОРЬ {formatDuration(anchorTime)}</span><div className="waveform-zoom"><button type="button" aria-label="Уменьшить масштаб волны" disabled={zoom <= 6} onClick={() => setZoom((value) => Math.max(6, value / 1.5))}>−</button><span>{(zoom / 18).toFixed(1)}×</span><button type="button" aria-label="Увеличить масштаб волны" disabled={zoom >= 72} onClick={() => setZoom((value) => Math.min(72, value * 1.5))}>+</button></div><span>{track?.bpm ? `GRID · ${track.bpm} BPM` : 'GRID · BPM —'}</span></div>
+    <div className="waveform-caption"><span>{formatDuration(time)} · ЯКОРЬ {formatDuration(anchorTime)}</span><div className="waveform-zoom"><button type="button" aria-label="Уменьшить масштаб волны" disabled={zoom <= 6} onClick={() => setZoom((value) => Math.max(6, value / 1.5))}>−</button><span>{(zoom / 18).toFixed(1)}×</span><button type="button" aria-label="Увеличить масштаб волны" disabled={zoom >= 72} onClick={() => setZoom((value) => Math.min(72, value * 1.5))}>+</button></div><div className="grid-adjust"><button type="button" aria-label="Сдвинуть сетку битов назад на 10 миллисекунд" title="Сетка −10 мс" disabled={!track?.bpm} onClick={() => setGridNudge((value) => Math.max(-1, value - 0.01))}>−</button><span title="Ручная поправка сетки">{gridNudge === 0 ? "GRID" : `${gridNudge > 0 ? "+" : ""}${Math.round(gridNudge * 1000)}ms`}{track?.bpm ? ` · ${track.bpm}` : " · BPM —"}</span><button type="button" aria-label="Сдвинуть сетку битов вперёд на 10 миллисекунд" title="Сетка +10 мс" disabled={!track?.bpm} onClick={() => setGridNudge((value) => Math.min(1, value + 0.01))}>+</button></div></div>
     <div className="deck-meta"><span><b>{track?.bpm ?? '—'}</b> BPM</span><span><b>{syncRate.toFixed(2)}×</b> RATE</span></div>
     <div className="waveform-seek"><input aria-label={`Точная позиция трека ${letter}`} type="range" min={0} max={Math.max(duration || track?.duration || 0, 0.01)} step="0.01" value={Math.min(time, duration || track?.duration || time)} onChange={(event) => onSeek(Number(event.target.value))} disabled={!track} /><span>{formatDuration(time)}</span></div><div className="transport"><button aria-label={`Стоп: вернуться к якорю деки ${letter}`} title="Стоп · к якорю" onClick={() => onStop(anchorTime)}>■</button><button className="play-button" aria-label={playing ? `Пауза деки ${letter}` : `Воспроизвести деку ${letter}`} title={playing ? "Пауза" : "Воспроизвести"} onClick={onPlay} disabled={!track}>{playing ? "Ⅱ" : "▶"}</button><button aria-label={`Установить якорь деки ${letter} в текущей позиции`} title="Поставить якорь здесь" onClick={() => setAnchorTime(time)} disabled={!track}>⚑</button><button aria-label={`Выбрать трек для деки ${letter}`} onClick={() => tracks.length ? setChoosing(!choosing) : onImport()}>♫</button></div>
     <button className="sync-button" onClick={onSync} disabled={!track}>{`SYNC ${letter} ← ${letter === 'A' ? 'B' : 'A'}`}</button>
