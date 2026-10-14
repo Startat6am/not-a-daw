@@ -17,8 +17,11 @@ function formatBytes(bytes: number) {
   return bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-const waveformCache = new WeakMap<Blob, Promise<number[]>>()
-function getWaveformPeaks(blob: Blob, bars = 1200): Promise<number[]> {
+type WaveformLevel = { min: Float32Array; max: Float32Array }
+type WaveformPyramid = { levels: WaveformLevel[]; length: number; duration: number; peak: number }
+
+const waveformCache = new WeakMap<Blob, Promise<WaveformPyramid>>()
+function getWaveformPeaks(blob: Blob, bins = 65536): Promise<WaveformPyramid> {
   const cached = waveformCache.get(blob)
   if (cached) return cached
   const task = (async () => {
@@ -28,29 +31,113 @@ function getWaveformPeaks(blob: Blob, bars = 1200): Promise<number[]> {
     const context = new AudioContextClass()
     try {
       const buffer = await context.decodeAudioData(await blob.arrayBuffer())
-      if (!buffer.length) throw new Error('Empty audio buffer')
-      const peaks = new Array<number>(bars).fill(0)
+      if (!buffer.length || !buffer.duration) throw new Error('Empty audio buffer')
+      const count = Math.min(bins, buffer.length)
+      const min = new Float32Array(count)
+      const max = new Float32Array(count)
+      const channels = Array.from({ length: buffer.numberOfChannels }, (_, index) => buffer.getChannelData(index))
       let globalPeak = 0
-      for (let bin = 0; bin < bars; bin++) {
-        const start = Math.floor(bin * buffer.length / bars)
-        const end = Math.max(start + 1, Math.floor((bin + 1) * buffer.length / bars))
-        let peak = 0
-        for (let channelIndex = 0; channelIndex < buffer.numberOfChannels; channelIndex++) {
-          const channel = buffer.getChannelData(channelIndex)
-          for (let sampleIndex = start; sampleIndex < Math.min(end, buffer.length); sampleIndex++) {
-            peak = Math.max(peak, Math.abs(channel[sampleIndex] || 0))
+      for (let bin = 0; bin < count; bin++) {
+        const start = Math.floor(bin * buffer.length / count)
+        const end = Math.max(start + 1, Math.floor((bin + 1) * buffer.length / count))
+        let lo = 1
+        let hi = -1
+        for (const channel of channels) {
+          for (let sample = start; sample < Math.min(end, buffer.length); sample++) {
+            const value = channel[sample] || 0
+            if (value < lo) lo = value
+            if (value > hi) hi = value
           }
         }
-        peaks[bin] = peak
-        globalPeak = Math.max(globalPeak, peak)
+        min[bin] = lo
+        max[bin] = hi
+        globalPeak = Math.max(globalPeak, Math.abs(lo), Math.abs(hi))
       }
-      return peaks.map((peak) => globalPeak > 0 ? Math.max(0.035, Math.pow(peak / globalPeak, 0.68)) : 0.035)
+      const levels: WaveformLevel[] = [{ min, max }]
+      while (levels[levels.length - 1].min.length > 1) {
+        const previous = levels[levels.length - 1]
+        const nextLength = Math.ceil(previous.min.length / 2)
+        const nextMin = new Float32Array(nextLength)
+        const nextMax = new Float32Array(nextLength)
+        for (let index = 0; index < nextLength; index++) {
+          const left = index * 2
+          const right = Math.min(left + 1, previous.min.length - 1)
+          nextMin[index] = Math.min(previous.min[left], previous.min[right])
+          nextMax[index] = Math.max(previous.max[left], previous.max[right])
+        }
+        levels.push({ min: nextMin, max: nextMax })
+      }
+      return { levels, length: count, duration: buffer.duration, peak: globalPeak || 1 }
     } finally {
       await context.close().catch(() => undefined)
     }
   })()
   waveformCache.set(blob, task)
   return task
+}
+
+function WaveformCanvas({ waveform, time, zoom, duration, color }: { waveform: WaveformPyramid | null; time: number; zoom: number; duration: number; color: string }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const draw = () => {
+      const width = canvas.clientWidth
+      const height = canvas.clientHeight
+      if (!width || !height) return
+      const ratio = Math.max(1, window.devicePixelRatio || 1)
+      const pixelWidth = Math.round(width * ratio)
+      const pixelHeight = Math.round(height * ratio)
+      if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
+        canvas.width = pixelWidth
+        canvas.height = pixelHeight
+      }
+      const context = canvas.getContext('2d')
+      if (!context) return
+      context.setTransform(ratio, 0, 0, ratio, 0, 0)
+      context.clearRect(0, 0, width, height)
+      if (!waveform || !duration || !waveform.length) return
+
+      const binsPerPixel = waveform.length / waveform.duration / zoom
+      const levelIndex = Math.max(0, Math.min(waveform.levels.length - 1, Math.floor(Math.log2(Math.max(1, binsPerPixel)))))
+      const level = waveform.levels[levelIndex]
+      const bucketSize = 2 ** levelIndex
+      const centerY = height / 2
+      const amplitude = height * 0.46
+      const xStart = Math.max(0, Math.ceil(width / 2 - time * zoom))
+      const xEnd = Math.min(width - 1, Math.floor(width / 2 + (waveform.duration - time) * zoom))
+      if (xEnd < xStart) return
+      context.beginPath()
+      let started = false
+      for (let x = xStart; x <= xEnd; x++) {
+        const sampleTime = time + (x - width / 2) / zoom
+        const baseIndex = Math.max(0, Math.min(waveform.length - 1, Math.floor(sampleTime / waveform.duration * waveform.length)))
+        const index = Math.min(level.min.length - 1, Math.floor(baseIndex / bucketSize))
+        const lo = level.min[index] / waveform.peak
+        const hi = level.max[index] / waveform.peak
+        const shapedTop = Math.sign(hi) * Math.pow(Math.abs(hi), 0.78)
+        const shapedBottom = Math.sign(lo) * Math.pow(Math.abs(lo), 0.78)
+        const y = centerY - shapedTop * amplitude
+        if (!started) { context.moveTo(x + 0.5, y); started = true }
+        else context.lineTo(x + 0.5, y)
+      }
+      for (let x = xEnd; x >= xStart; x--) {
+        const sampleTime = time + (x - width / 2) / zoom
+        const baseIndex = Math.max(0, Math.min(waveform.length - 1, Math.floor(sampleTime / waveform.duration * waveform.length)))
+        const index = Math.min(level.min.length - 1, Math.floor(baseIndex / bucketSize))
+        const lo = level.min[index] / waveform.peak
+        const shapedBottom = Math.sign(lo) * Math.pow(Math.abs(lo), 0.78)
+        context.lineTo(x + 0.5, centerY - shapedBottom * amplitude)
+      }
+      context.closePath()
+      context.fillStyle = color
+      context.globalAlpha = 0.82
+      context.fill()
+      context.globalAlpha = 1
+    }
+    draw()
+  }, [waveform, time, zoom, duration, color])
+  return <canvas ref={canvasRef} className="waveform-canvas" aria-hidden="true" />
 }
 
 type TelegramTrack = { updateId: number; fileId: string; name: string; type: string; size: number; duration?: number; caption?: string }
@@ -424,7 +511,7 @@ export default function App() {
 }
 
 function Deck({ letter, track, tracks, onLoad, onImport, choosing, setChoosing, playing, time, duration, onPlay, onSeek, onStop, onSync, syncRate, loadFeedback }: { letter: 'A' | 'B'; track?: LocalTrack; tracks: LocalTrack[]; onLoad: (id: string) => void; onImport: () => void; choosing: boolean; setChoosing: (value: boolean) => void; playing: boolean; time: number; duration: number; onPlay: () => void; onSeek: (value: number) => void; onStop: () => void; onSync: () => void; syncRate: number; loadFeedback: string }) {
-  const [waveformPeaks, setWaveformPeaks] = useState<number[]>([])
+  const [waveformPeaks, setWaveformPeaks] = useState<WaveformPyramid | null>(null)
   const [zoom, setZoom] = useState(18)
   const dragRef = useRef<{ x: number; time: number; pointerId: number } | null>(null)
   useEffect(() => {
@@ -448,10 +535,7 @@ function Deck({ letter, track, tracks, onLoad, onImport, choosing, setChoosing, 
     return <i key={beat} className={beat % 4 === 0 ? 'waveform-barline' : ''} style={{ left: (beatTime * zoom) + 'px' }} />
   }) : [], [track?.bpm, track?.beatOffset, duration, beatCount, gridStride, zoom])
   const contentWidth = Math.max(duration * zoom, 1)
-  const waveformPath = useMemo(() => waveformPeaks.length
-    ? 'M 0 50 ' + waveformPeaks.map((peak, i) => 'L ' + i + ' ' + (50 - peak * 46)).join(' ') + ' ' + waveformPeaks.slice().reverse().map((peak, i) => 'L ' + (waveformPeaks.length - 1 - i) + ' ' + (50 + peak * 46)).join(' ') + ' Z'
-    : '', [waveformPeaks])
-  const waveformStyle = { '--wave-content-width': `${contentWidth}px`, '--wave-offset': `calc(50% - ${time * zoom}px)` } as CSSProperties
+    const waveformStyle = { '--wave-content-width': `${contentWidth}px`, '--wave-offset': `calc(50% - ${time * zoom}px)` } as CSSProperties
   function beginWaveDrag(event: PointerEvent<HTMLDivElement>) {
     if (!track || !duration) return
     dragRef.current = { x: event.clientX, time, pointerId: event.pointerId }
@@ -478,7 +562,8 @@ function Deck({ letter, track, tracks, onLoad, onImport, choosing, setChoosing, 
       onKeyDown={(event) => { if (event.key === 'ArrowLeft') onSeek(Math.max(0, time - 0.1)); if (event.key === 'ArrowRight') onSeek(Math.min(duration, time + 0.1)) }}>
       <div className="waveform-content" style={{ width: `${contentWidth}px`, left: `calc(50% - ${time * zoom}px)` }}>
         <div className="waveform-grid" aria-hidden="true">{gridLines}</div>
-        <>{waveformPeaks.length ? <svg className="waveform-real" viewBox={`0 0 ${Math.max(waveformPeaks.length, 1)} 100`} preserveAspectRatio="none" aria-hidden="true"><path d={waveformPath} /></svg> : <span className="waveform-loading">{track ? 'ЗАГРУЗКА ВОЛНЫ…' : 'ЗАГРУЗИ ТРЕК'}</span>}</>
+        <WaveformCanvas waveform={waveformPeaks} time={time} zoom={zoom} duration={duration || track?.duration || 0} color={letter === 'A' ? '#d7ff5e' : '#ff8b62'} />
+        {!waveformPeaks && <span className="waveform-loading">{track ? 'ЗАГРУЗКА ВОЛНЫ…' : 'ЗАГРУЗИ ТРЕК'}</span>}
       </div>
       <div className="waveform-center-line" aria-hidden="true" />
     </div>
