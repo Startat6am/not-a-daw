@@ -146,3 +146,5 @@
 .transport .play-button{font-weight:800}
 
 .waveform-anchor-line{position:absolute;z-index:4;top:0;bottom:0;width:1px;border-left:1px dashed #f4f7ef;opacity:.85;pointer-events:none}
+
+.grid-adjust{display:flex;align-items:center;gap:3px;white-space:nowrap}.grid-adjust button{display:grid;place-items:center;width:17px;height:17px;padding:0;border:1px solid #39413b;border-radius:4px;background:#202522;color:#cbd4ca;font-size:11px;line-height:1}.grid-adjust button:disabled{opacity:.3}.grid-adjust span{min-width:36px;text-align:center}
