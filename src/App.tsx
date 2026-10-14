@@ -198,8 +198,6 @@ export default function App() {
   const [durationB, setDurationB] = useState(0)
   const [playingA, setPlayingA] = useState(false)
   const [playingB, setPlayingB] = useState(false)
-  const [loadFeedbackA, setLoadFeedbackA] = useState('')
-  const [loadFeedbackB, setLoadFeedbackB] = useState('')
   const [syncFeedback, setSyncFeedback] = useState('')
   const [syncRates, setSyncRates] = useState<{ A: number; B: number }>({ A: 1, B: 1 })
   const [syncArmed, setSyncArmed] = useState<{ A: boolean; B: boolean }>({ A: false, B: false })
@@ -236,14 +234,14 @@ export default function App() {
     if (!loadedA) { setSrcA(''); setTimeA(0); setDurationA(0); setPlayingA(false); if (audioA.current) { audioA.current.pause(); audioA.current.playbackRate = 1 }; setSyncRates((r) => ({ ...r, A: 1 })); setSyncArmed((r) => ({ ...r, A: false })); return }
     const url = URL.createObjectURL(loadedA.blob)
     if (audioA.current) { audioA.current.pause(); audioA.current.currentTime = 0; audioA.current.playbackRate = 1 }
-    setTimeA(0); setPlayingA(false); setSrcA(url); setLoadFeedbackA(`Загружено: ${loadedA.name}`); setSyncRates((r) => ({ ...r, A: 1 })); setSyncArmed((r) => ({ ...r, A: false }))
+    setTimeA(0); setPlayingA(false); setSrcA(url); setSyncRates((r) => ({ ...r, A: 1 })); setSyncArmed((r) => ({ ...r, A: false }))
     return () => URL.revokeObjectURL(url)
   }, [loadedA])
   useEffect(() => {
     if (!loadedB) { setSrcB(''); setTimeB(0); setDurationB(0); setPlayingB(false); if (audioB.current) { audioB.current.pause(); audioB.current.playbackRate = 1 }; setSyncRates((r) => ({ ...r, B: 1 })); setSyncArmed((r) => ({ ...r, B: false })); return }
     const url = URL.createObjectURL(loadedB.blob)
     if (audioB.current) { audioB.current.pause(); audioB.current.currentTime = 0; audioB.current.playbackRate = 1 }
-    setTimeB(0); setPlayingB(false); setSrcB(url); setLoadFeedbackB(`Загружено: ${loadedB.name}`); setSyncRates((r) => ({ ...r, B: 1 })); setSyncArmed((r) => ({ ...r, B: false }))
+    setTimeB(0); setPlayingB(false); setSrcB(url); setSyncRates((r) => ({ ...r, B: 1 })); setSyncArmed((r) => ({ ...r, B: false }))
     return () => URL.revokeObjectURL(url)
   }, [loadedB])
 
@@ -315,8 +313,8 @@ export default function App() {
   }, [playingA, playingB])
 
   const loadDeck = useCallback((which: 'A' | 'B', id: string) => {
-    if (which === 'A') { setDeckA(id); setLoadFeedbackA('Загрузка трека…'); setPicker(null) }
-    else { setDeckB(id); setLoadFeedbackB('Загрузка трека…'); setPicker(null) }
+    if (which === 'A') { setDeckA(id); setPicker(null) }
+    else { setDeckB(id); setPicker(null) }
     setSyncFeedback('')
   }, [])
 
@@ -485,8 +483,8 @@ export default function App() {
     <audio ref={audioB} src={srcB || undefined} preload="metadata" onTimeUpdate={() => { if (audioB.current) setTimeB(audioB.current.currentTime) }} onLoadedMetadata={() => { if (audioB.current) setDurationB(audioB.current.duration) }} onPlay={() => setPlayingB(true)} onPause={() => setPlayingB(false)} onEnded={() => setPlayingB(false)} onError={() => setError("Дека B: браузер не смог декодировать этот аудиофайл.")} />
 
     <section className="decks" aria-label="Деки">
-      <Deck letter="A" track={loadedA} tracks={tracks} onLoad={(id) => loadDeck('A', id)} onImport={() => fileInput.current?.click()} choosing={picker === 'A'} setChoosing={(v) => setPicker(v ? 'A' : null)} playing={playingA} time={timeA} duration={durationA} onPlay={() => void togglePlay('A')} onSeek={(v) => seek('A', v)} onStop={(anchor) => { if (audioA.current) { audioA.current.pause(); audioA.current.currentTime = anchor; setTimeA(anchor) } }} onSync={() => syncDeck('A')} syncRate={syncRates.A} loadFeedback={loadFeedbackA} />
-      <Deck letter="B" track={loadedB} tracks={tracks} onLoad={(id) => loadDeck('B', id)} onImport={() => fileInput.current?.click()} choosing={picker === 'B'} setChoosing={(v) => setPicker(v ? 'B' : null)} playing={playingB} time={timeB} duration={durationB} onPlay={() => void togglePlay('B')} onSeek={(v) => seek('B', v)} onStop={(anchor) => { if (audioB.current) { audioB.current.pause(); audioB.current.currentTime = anchor; setTimeB(anchor) } }} onSync={() => syncDeck('B')} syncRate={syncRates.B} loadFeedback={loadFeedbackB} />
+      <Deck letter="A" track={loadedA} tracks={tracks} onLoad={(id) => loadDeck('A', id)} onImport={() => fileInput.current?.click()} choosing={picker === 'A'} setChoosing={(v) => setPicker(v ? 'A' : null)} playing={playingA} time={timeA} duration={durationA} onPlay={() => void togglePlay('A')} onSeek={(v) => seek('A', v)} onStop={(anchor) => { if (audioA.current) { audioA.current.pause(); audioA.current.currentTime = anchor; setTimeA(anchor) } }} onSync={() => syncDeck('A')} syncRate={syncRates.A} />
+      <Deck letter="B" track={loadedB} tracks={tracks} onLoad={(id) => loadDeck('B', id)} onImport={() => fileInput.current?.click()} choosing={picker === 'B'} setChoosing={(v) => setPicker(v ? 'B' : null)} playing={playingB} time={timeB} duration={durationB} onPlay={() => void togglePlay('B')} onSeek={(v) => seek('B', v)} onStop={(anchor) => { if (audioB.current) { audioB.current.pause(); audioB.current.currentTime = anchor; setTimeB(anchor) } }} onSync={() => syncDeck('B')} syncRate={syncRates.B} />
     </section>
 
     {syncFeedback && <p className="sync-feedback" role="status">{syncFeedback}<button aria-label="Закрыть сообщение Sync" onClick={() => setSyncFeedback('')}>×</button></p>}
@@ -554,7 +552,7 @@ export default function App() {
   </main>
 }
 
-function Deck({ letter, track, tracks, onLoad, onImport, choosing, setChoosing, playing, time, duration, onPlay, onSeek, onStop, onSync, syncRate, loadFeedback }: { letter: 'A' | 'B'; track?: LocalTrack; tracks: LocalTrack[]; onLoad: (id: string) => void; onImport: () => void; choosing: boolean; setChoosing: (value: boolean) => void; playing: boolean; time: number; duration: number; onPlay: () => void; onSeek: (value: number) => void; onStop: (anchor: number) => void; onSync: () => void; syncRate: number; loadFeedback: string }) {
+function Deck({ letter, track, tracks, onLoad, onImport, choosing, setChoosing, playing, time, duration, onPlay, onSeek, onStop, onSync, syncRate, loadFeedback }: { letter: 'A' | 'B'; track?: LocalTrack; tracks: LocalTrack[]; onLoad: (id: string) => void; onImport: () => void; choosing: boolean; setChoosing: (value: boolean) => void; playing: boolean; time: number; duration: number; onPlay: () => void; onSeek: (value: number) => void; onStop: (anchor: number) => void; onSync: () => void; syncRate: number }) {
   const [waveformPeaks, setWaveformPeaks] = useState<WaveformPyramid | null>(null)
   const [zoom, setZoom] = useState(18)
   const [anchorTime, setAnchorTime] = useState(0)
