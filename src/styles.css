@@ -141,6 +141,8 @@
 .waveform-seek{display:flex;align-items:center;gap:8px;margin:4px 1px 8px;color:#9aa49b;font:9px ui-monospace,monospace}
 .waveform-seek input[type=range]{height:4px;min-width:0;flex:1;cursor:pointer}
 .waveform-seek span{min-width:34px;text-align:right}
-.transport{grid-template-columns:repeat(5,minmax(0,1fr))}
+.transport{grid-template-columns:repeat(4,minmax(0,1fr))}
 .transport button{min-width:0;font-size:13px}
 .transport .play-button{font-weight:800}
+
+.waveform-anchor-line{position:absolute;z-index:4;top:0;bottom:0;width:1px;border-left:1px dashed #f4f7ef;opacity:.85;pointer-events:none}
