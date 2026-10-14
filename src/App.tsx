@@ -135,7 +135,7 @@ function WaveformCanvas({ waveform, time, zoom, duration }: { waveform: Waveform
       const level = waveform.levels[levelIndex]
       const bucketSize = 2 ** levelIndex
       const centerY = height / 2
-      const amplitude = height * 0.46
+      const amplitude = height * 0.49
       const xStart = Math.max(0, Math.ceil(width / 2 - time * zoom))
       const xEnd = Math.min(width - 1, Math.floor(width / 2 + (waveform.duration - time) * zoom))
       if (xEnd < xStart) return
@@ -146,8 +146,8 @@ function WaveformCanvas({ waveform, time, zoom, duration }: { waveform: Waveform
         const index = Math.min(level.min.length - 1, Math.floor(baseIndex / bucketSize))
         const hi = Math.max(0, level.max[index] / waveform.peak)
         const lo = Math.min(0, level.min[index] / waveform.peak)
-        const top = centerY - Math.pow(hi, 0.78) * amplitude
-        const bottom = centerY - Math.sign(lo) * Math.pow(Math.abs(lo), 0.78) * amplitude
+        const top = centerY - Math.pow(hi, 0.68) * amplitude
+        const bottom = centerY - Math.sign(lo) * Math.pow(Math.abs(lo), 0.68) * amplitude
         const colorIndex = Math.min(waveform.colors.length / 3 - 1, Math.max(0, Math.floor(sampleTime / waveform.duration * (waveform.colors.length / 3))))
         const ci = colorIndex * 3
         context.fillStyle = `rgb(${waveform.colors[ci]},${waveform.colors[ci + 1]},${waveform.colors[ci + 2]})`
@@ -601,7 +601,6 @@ function Deck({ letter, track, tracks, onLoad, onImport, choosing, setChoosing, 
   }
   return <article className={`deck deck-${letter.toLowerCase()}`}>
     <div className="deck-head"><span className="deck-letter">{letter}</span><span className="deck-time">{formatDuration(time)} / {formatDuration(duration || track?.duration)}</span><button className="deck-menu" aria-label={`Выбрать трек для деки ${letter}`} onClick={() => tracks.length ? setChoosing(!choosing) : onImport()}>•••</button></div>
-    <div className={`turntable ${playing ? 'is-playing' : ''}`}><div className="vinyl"><div className="vinyl-grooves" /><div className="vinyl-label">{letter}</div></div><div className="tonearm"><i /></div></div>
     <div className="deck-track">{track?.name ?? '—'}<span>{track ? formatBytes(track.size) : ' '}</span></div>
     {loadFeedback && track && <div className="deck-load-feedback" title={loadFeedback}>{loadFeedback}</div>}
     <div className={`waveform wave-${letter.toLowerCase()}`} style={waveformStyle} aria-label={`Увеличенная волна ${letter}; текущая позиция по центру; свайп для перемотки`} role="slider" aria-valuemin={0} aria-valuemax={duration || 0} aria-valuenow={time} tabIndex={track ? 0 : -1}
