@@ -134,6 +134,13 @@ function WaveformCanvas({ waveform, time, zoom, duration, color }: { waveform: W
       context.globalAlpha = 1
     }
     draw()
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(draw) : null
+    observer?.observe(canvas)
+    window.addEventListener('resize', draw)
+    return () => {
+      observer?.disconnect()
+      window.removeEventListener('resize', draw)
+    }
   }, [waveform, time, zoom, duration, color])
   return <canvas ref={canvasRef} className="waveform-canvas" aria-hidden="true" />
 }
