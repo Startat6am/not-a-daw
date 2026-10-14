@@ -135,3 +135,12 @@
 /* High-resolution mono waveform: precomputed min/max peak pyramid rendered only in the viewport. */
 .waveform-canvas{position:absolute;z-index:3;inset:0;width:100%;height:100%;display:block;pointer-events:none}
 .waveform-grid{z-index:1}
+
+
+/* Deck cue/anchor controls and precise position slider */
+.waveform-seek{display:flex;align-items:center;gap:8px;margin:4px 1px 8px;color:#9aa49b;font:9px ui-monospace,monospace}
+.waveform-seek input[type=range]{height:4px;min-width:0;flex:1;cursor:pointer}
+.waveform-seek span{min-width:34px;text-align:right}
+.transport{grid-template-columns:repeat(5,minmax(0,1fr))}
+.transport button{min-width:0;font-size:13px}
+.transport .play-button{font-weight:800}
