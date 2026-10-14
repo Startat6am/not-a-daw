@@ -161,3 +161,20 @@
 .waveform-center-line{width:2px;background:#f8faf5;box-shadow:0 0 8px #fff8}
 .waveform-caption{min-height:24px}
 @media(max-width:600px){.waveform{height:108px;margin:8px 0 4px}.deck-track{min-height:34px;margin-top:8px}}
+
+
+/* Compact deck header: deck letter, scrolling track title, elapsed/total time, vertical menu. */
+.deck-head{display:flex;align-items:center;gap:9px;min-width:0}
+.deck-track-title{position:relative;display:flex;align-items:center;flex:1 1 auto;min-width:0;overflow:hidden;white-space:nowrap;color:#f4f5f2;font-size:13px;font-weight:700;letter-spacing:-.25px}
+.deck-track-title-text,.deck-track-title-copy{display:inline-block;flex:0 0 auto;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.deck-track-title.is-overflowing{justify-content:flex-start}
+.deck-track-title.is-overflowing .deck-track-title-text{max-width:none;overflow:visible;text-overflow:clip;animation:deck-title-scroll 9s ease-in-out infinite alternate}
+.deck-track-title-copy{display:none}
+.deck-track-title.is-overflowing .deck-track-title-copy{display:inline-block;max-width:none;overflow:visible;text-overflow:clip;padding-left:42px;animation:deck-title-scroll-copy 9s ease-in-out infinite alternate}
+@keyframes deck-title-scroll{0%,10%{transform:translateX(0)}90%,100%{transform:translateX(calc(-1 * (100% - 100px)))}}
+@keyframes deck-title-scroll-copy{0%,10%{transform:translateX(0)}90%,100%{transform:translateX(calc(-1 * (100% - 100px)))}}
+.deck-time{flex:0 0 auto;white-space:nowrap;font:10px ui-monospace,monospace;color:#a2aaa3}
+.deck-menu{flex:0 0 20px;width:20px;margin-left:0;padding:2px 0;font-size:23px;line-height:1;letter-spacing:0;text-align:center}
+.deck-track,.deck-load-feedback{display:none!important}
+@media(max-width:600px){.deck-head{gap:6px}.deck-track-title{font-size:11px}.deck-time{font-size:9px}.deck-menu{flex-basis:17px;width:17px;font-size:21px}}
+@media(prefers-reduced-motion:reduce){.deck-track-title.is-overflowing .deck-track-title-text,.deck-track-title.is-overflowing .deck-track-title-copy{animation:none}}
