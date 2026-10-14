@@ -515,7 +515,7 @@ export default function App() {
   </main>
 }
 
-function Deck({ letter, track, tracks, onLoad, onImport, choosing, setChoosing, playing, time, duration, onPlay, onSeek, onStop, onSync, syncRate, loadFeedback }: { letter: 'A' | 'B'; track?: LocalTrack; tracks: LocalTrack[]; onLoad: (id: string) => void; onImport: () => void; choosing: boolean; setChoosing: (value: boolean) => void; playing: boolean; time: number; duration: number; onPlay: () => void; onSeek: (value: number) => void; onStop: (anchor: number) => void; onPause: () => void; onSync: () => void; syncRate: number; loadFeedback: string }) {
+function Deck({ letter, track, tracks, onLoad, onImport, choosing, setChoosing, playing, time, duration, onPlay, onSeek, onStop, onPause, onSync, syncRate, loadFeedback }: { letter: 'A' | 'B'; track?: LocalTrack; tracks: LocalTrack[]; onLoad: (id: string) => void; onImport: () => void; choosing: boolean; setChoosing: (value: boolean) => void; playing: boolean; time: number; duration: number; onPlay: () => void; onSeek: (value: number) => void; onStop: (anchor: number) => void; onPause: () => void; onSync: () => void; syncRate: number; loadFeedback: string }) {
   const [waveformPeaks, setWaveformPeaks] = useState<WaveformPyramid | null>(null)
   const [zoom, setZoom] = useState(18)
   const [anchorTime, setAnchorTime] = useState(0)
