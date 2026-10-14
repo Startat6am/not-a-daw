@@ -339,11 +339,21 @@ export default function App() {
     }
     const sourceBeat = 60 / sourceTrack.bpm
     const targetBeat = 60 / targetTrack.bpm
-    const sourcePhase = source.currentTime % sourceBeat
+    const sourceOffset = sourceTrack.beatOffset ?? 0
+    const targetOffset = targetTrack.beatOffset ?? 0
+
+    // Express the source playhead as a fraction of its detected beat, then
+    // map that fraction onto the target's beat grid. This accounts for each
+    // track's detected grid phase instead of assuming beat zero at time 0.
+    const sourcePhaseSeconds = ((source.currentTime - sourceOffset) % sourceBeat + sourceBeat) % sourceBeat
+    const beatProgress = sourcePhaseSeconds / sourceBeat
+    const targetBeatIndex = Math.floor((destination.currentTime - targetOffset) / targetBeat)
+    const alignedTargetTime = targetOffset + targetBeatIndex * targetBeat + beatProgress * targetBeat
+
     destination.playbackRate = rate
-    destination.currentTime = Math.max(0, Math.floor(destination.currentTime / targetBeat) * targetBeat + sourcePhase * rate)
+    destination.currentTime = Math.max(0, alignedTargetTime)
     setSyncRates((current) => ({ ...current, [target]: rate }))
-    setSyncFeedback(`Дека ${target} синхронизирована с декой ${target === 'A' ? 'B' : 'A'} · ${sourceTrack.bpm} BPM · скорость ${rate.toFixed(3)}×`)
+    setSyncFeedback(`Дека ${target} синхронизирована с декой ${target === 'A' ? 'B' : 'A'} · сетка учтена · ${sourceTrack.bpm} BPM · скорость ${rate.toFixed(3)}×`)
   }
 
   async function togglePlay(which: 'A' | 'B') {
