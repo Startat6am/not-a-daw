@@ -113,7 +113,6 @@ function WaveformCanvas({ waveform, time, zoom, duration, color }: { waveform: W
         const sampleTime = time + (x - width / 2) / zoom
         const baseIndex = Math.max(0, Math.min(waveform.length - 1, Math.floor(sampleTime / waveform.duration * waveform.length)))
         const index = Math.min(level.min.length - 1, Math.floor(baseIndex / bucketSize))
-        const lo = level.min[index] / waveform.peak
         const hi = level.max[index] / waveform.peak
         const shapedTop = Math.sign(hi) * Math.pow(Math.abs(hi), 0.78)
         const y = centerY - shapedTop * amplitude
