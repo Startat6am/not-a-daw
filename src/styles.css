@@ -234,3 +234,13 @@
 /* Make the first detected beat unmistakable; bar lines remain secondary accents. */
 .waveform-grid i.waveform-downbeat{width:3px;background:#f5fff0;opacity:1;box-shadow:0 0 7px #f5fff088}
 .wave-b .waveform-grid i.waveform-downbeat{background:#fff3eb;box-shadow:0 0 7px #ffad8e99}
+
+
+/* Beat-quantized loop controls */
+.loop-controls{display:flex;align-items:center;justify-content:center;gap:6px;margin-top:7px;min-height:30px}
+.loop-controls span{font:700 9px ui-monospace,monospace;letter-spacing:1px;color:#858d86;margin-right:3px}
+.loop-controls button{min-width:32px;height:29px;padding:0 8px;border:1px solid #343a35;border-radius:7px;background:#171a18;color:#d0d7d0;font:700 11px ui-monospace,monospace;cursor:pointer}
+.loop-controls button.active{background:#d9ff78;border-color:#d9ff78;color:#151a10;box-shadow:0 0 10px #d9ff7830}
+.loop-controls button:disabled{opacity:.35;cursor:not-allowed}
+.loop-controls .loop-exit{min-width:25px;padding:0;color:#ff9c82;border-color:#59382f}
+@media(max-width:600px){.loop-controls{gap:4px;margin-top:5px;min-height:27px}.loop-controls button{min-width:29px;height:26px;padding:0 6px}.loop-controls span{font-size:8px}}
