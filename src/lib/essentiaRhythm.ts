@@ -1,110 +1,89 @@
-import Essentia from 'essentia.js/dist/essentia.js-core.es.js'
-import { EssentiaWASM } from 'essentia.js/dist/essentia-wasm.es.js'
-
 export type EssentiaRhythmResult = {
   bpm: number
+  beatPeriod: number
   beatOffset: number
   ticks: number[]
   confidence: number
 }
 
-type EssentiaInstance = {
-  arrayToVector(values: Float32Array): { delete?: () => void }
-  RhythmExtractor2013(signal: unknown, maxTempo?: number, method?: string, minTempo?: number): {
-    bpm?: number
-    ticks?: unknown
-    confidence?: number
-  }
-}
+type WorkerResult = { id: number; result?: { bpm: number; ticks: number[]; confidence: number }; error?: string }
+type PendingRequest = { resolve: (value: WorkerResult['result']) => void; reject: (error: Error) => void }
 
-type EssentiaConstructor = new (wasm: unknown) => EssentiaInstance
-
-let essentiaPromise: Promise<EssentiaInstance> | undefined
 const analysisCache = new WeakMap<Blob, Promise<EssentiaRhythmResult>>()
+let rhythmWorker: Worker | undefined
+let nextRequestId = 1
+const pendingRequests = new Map<number, PendingRequest>()
 
-async function getEssentia(): Promise<EssentiaInstance> {
-  if (!essentiaPromise) {
-    essentiaPromise = Promise.resolve().then(() => {
-      const Constructor = Essentia as unknown as EssentiaConstructor
-      return new Constructor(EssentiaWASM)
-    })
+function getRhythmWorker(): Worker {
+  if (rhythmWorker) return rhythmWorker
+  rhythmWorker = new Worker(new URL('./essentiaRhythm.worker.ts', import.meta.url), { type: 'module' })
+  rhythmWorker.onmessage = (event: MessageEvent<WorkerResult>) => {
+    const pending = pendingRequests.get(event.data.id)
+    if (!pending) return
+    pendingRequests.delete(event.data.id)
+    if (event.data.error || !event.data.result) pending.reject(new Error(event.data.error || 'Essentia analysis failed'))
+    else pending.resolve(event.data.result)
   }
-  return essentiaPromise
+  rhythmWorker.onerror = () => {
+    for (const pending of pendingRequests.values()) pending.reject(new Error('Rhythm worker failed'))
+    pendingRequests.clear()
+    rhythmWorker?.terminate()
+    rhythmWorker = undefined
+  }
+  return rhythmWorker
 }
 
-function valuesFromVector(value: unknown): number[] {
-  if (!value) return []
-  if (Array.isArray(value) || ArrayBuffer.isView(value)) {
-    return Array.from(value as ArrayLike<number>, Number).filter(Number.isFinite)
-  }
-  const vector = value as { size?: () => number; get?: (index: number) => number; toArray?: () => number[] }
-  if (typeof vector.toArray === 'function') return vector.toArray().filter(Number.isFinite)
-  if (typeof vector.size === 'function' && typeof vector.get === 'function') {
-    const result: number[] = []
-    for (let i = 0; i < vector.size(); i++) {
-      const item = vector.get(i)
-      if (Number.isFinite(item)) result.push(item)
-    }
-    return result
-  }
-  return []
+function extractInWorker(samples: Float32Array): Promise<NonNullable<WorkerResult['result']>> {
+  const worker = getRhythmWorker()
+  const id = nextRequestId++
+  const copy = samples.slice()
+  return new Promise((resolve, reject) => {
+    pendingRequests.set(id, { resolve: (result) => result ? resolve(result) : reject(new Error('Empty Essentia result')), reject })
+    worker.postMessage({ id, samples: copy.buffer }, [copy.buffer])
+  })
 }
 
 async function runAnalysis(blob: Blob): Promise<EssentiaRhythmResult> {
   if (!blob.size) throw new Error('Empty audio file')
-
   const AudioContextClass = window.AudioContext ||
     (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
   if (!AudioContextClass) throw new Error('Web Audio API is unavailable')
 
   const decodeContext = new AudioContextClass()
-  let essentia: EssentiaInstance | undefined
-  let signalVector: { delete?: () => void } | undefined
-
   try {
     const decoded = await decodeContext.decodeAudioData(await blob.arrayBuffer())
     const seconds = Math.min(90, decoded.duration)
-    if (!Number.isFinite(seconds) || seconds < 6 || decoded.numberOfChannels < 1) {
-      throw new Error('Audio is too short to analyse')
-    }
+    if (!Number.isFinite(seconds) || seconds < 6 || decoded.numberOfChannels < 1) throw new Error('Audio is too short to analyse')
 
-    // Essentia's rhythm algorithms expect a 44.1 kHz mono signal.
-    // OfflineAudioContext performs proper resampling and channel downmixing.
+    // Decode and resample off the live playback graph; run CPU-heavy rhythm extraction in a Worker.
     const sampleRate = 44100
     const frameCount = Math.floor(seconds * sampleRate)
     const OfflineContext = window.OfflineAudioContext ||
       (window as typeof window & { webkitOfflineAudioContext?: typeof OfflineAudioContext }).webkitOfflineAudioContext
     if (!OfflineContext) throw new Error('OfflineAudioContext is unavailable')
-
     const offline = new OfflineContext(1, frameCount, sampleRate)
     const source = offline.createBufferSource()
     source.buffer = decoded
     source.connect(offline.destination)
     source.start(0, 0, seconds)
     const resampled = await offline.startRendering()
-    const mono = resampled.getChannelData(0)
+    const output = await extractInWorker(resampled.getChannelData(0))
+    const rawTicks = output.ticks.filter((tick) => tick >= 0 && tick < seconds).sort((a, b) => a - b)
+    if (rawTicks.length < 2) throw new Error('Essentia could not confidently detect a beat grid')
 
-    essentia = await getEssentia()
-    signalVector = essentia.arrayToVector(mono)
-    const output = essentia.RhythmExtractor2013(signalVector, 208, 'multifeature', 40)
-    const bpmValue = Number(output.bpm)
-    const ticks = valuesFromVector(output.ticks).filter((tick) => tick >= 0 && tick < seconds).sort((a, b) => a - b)
-    if (!Number.isFinite(bpmValue) || bpmValue < 40 || bpmValue > 208 || ticks.length < 2) {
-      throw new Error('Essentia could not confidently detect a beat grid')
-    }
-
-    const bpm = Math.round(bpmValue)
-    const beatPeriod = 60 / bpm
-    // Use the first detected beat's phase, not an assumed zero-time downbeat.
-    const beatOffset = ((ticks[0] % beatPeriod) + beatPeriod) % beatPeriod
-    return {
-      bpm,
-      beatOffset,
-      ticks,
-      confidence: Number.isFinite(Number(output.confidence)) ? Number(output.confidence) : 0,
-    }
+    // Keep sub-BPM precision. Robustly estimate the beat interval from Essentia's actual ticks,
+    // rejecting intervals that look like missed beats or subdivisions.
+    const expectedPeriod = 60 / output.bpm
+    const intervals = rawTicks.slice(1).map((tick, index) => tick - rawTicks[index])
+      .filter((interval) => interval >= expectedPeriod * 0.78 && interval <= expectedPeriod * 1.22)
+      .sort((a, b) => a - b)
+    const beatPeriod = intervals.length
+      ? intervals[Math.floor(intervals.length / 2)]
+      : expectedPeriod
+    const bpm = Math.round(60 / beatPeriod)
+    const beatOffset = ((rawTicks[0] % beatPeriod) + beatPeriod) % beatPeriod
+    return { bpm, beatPeriod, beatOffset, ticks: rawTicks, confidence: output.confidence }
   } finally {
-    signalVector?.delete?.()
     await decodeContext.close().catch(() => undefined)
   }
 }
@@ -112,7 +91,6 @@ async function runAnalysis(blob: Blob): Promise<EssentiaRhythmResult> {
 export function analyzeEssentiaRhythm(blob: Blob): Promise<EssentiaRhythmResult> {
   const cached = analysisCache.get(blob)
   if (cached) return cached
-
   const analysis = runAnalysis(blob).catch((error) => {
     analysisCache.delete(blob)
     throw error
