@@ -567,9 +567,9 @@ function Deck({ letter, track, tracks, onLoad, onImport, choosing, setChoosing, 
       onKeyDown={(event) => { if (event.key === 'ArrowLeft') onSeek(Math.max(0, time - 0.1)); if (event.key === 'ArrowRight') onSeek(Math.min(duration, time + 0.1)) }}>
       <div className="waveform-content" style={{ width: `${contentWidth}px`, left: `calc(50% - ${time * zoom}px)` }}>
         <div className="waveform-grid" aria-hidden="true">{gridLines}</div>
-        <WaveformCanvas waveform={waveformPeaks} time={time} zoom={zoom} duration={duration || track?.duration || 0} color={letter === 'A' ? '#d7ff5e' : '#ff8b62'} />
-        {!waveformPeaks && <span className="waveform-loading">{track ? 'ЗАГРУЗКА ВОЛНЫ…' : 'ЗАГРУЗИ ТРЕК'}</span>}
       </div>
+      <WaveformCanvas waveform={waveformPeaks} time={time} zoom={zoom} duration={duration || track?.duration || 0} color={letter === 'A' ? '#d7ff5e' : '#ff8b62'} />
+      {!waveformPeaks && <span className="waveform-loading">{track ? 'ЗАГРУЗКА ВОЛНЫ…' : 'ЗАГРУЗИ ТРЕК'}</span>}
       <div className="waveform-center-line" aria-hidden="true" />
     </div>
     <div className="waveform-caption"><span>{formatDuration(time)} · PLAYHEAD CENTER</span><div className="waveform-zoom"><button type="button" aria-label="Уменьшить масштаб волны" disabled={zoom <= 6} onClick={() => setZoom((value) => Math.max(6, value / 1.5))}>−</button><span>{(zoom / 18).toFixed(1)}×</span><button type="button" aria-label="Увеличить масштаб волны" disabled={zoom >= 72} onClick={() => setZoom((value) => Math.min(72, value * 1.5))}>+</button></div><span>{track?.bpm ? `GRID · ${track.bpm} BPM` : 'GRID · BPM —'}</span></div>
