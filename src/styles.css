@@ -229,3 +229,8 @@
   .deck{padding:11px}
   .waveform{height:92px}
 }
+
+
+/* Make the first detected beat unmistakable; bar lines remain secondary accents. */
+.waveform-grid i.waveform-downbeat{width:3px;background:#f5fff0;opacity:1;box-shadow:0 0 7px #f5fff088}
+.wave-b .waveform-grid i.waveform-downbeat{background:#fff3eb;box-shadow:0 0 7px #ffad8e99}
