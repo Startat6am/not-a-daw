@@ -278,11 +278,11 @@ export default function App() {
       void (async () => {
         try {
           const grid = await detectBeatGrid(track.blob, track.bpm)
-          const updated: LocalTrack = { ...track, bpm: grid.bpm ?? track.bpm, beatOffset: grid.beatOffset, bpmStatus: 'ready' }
+          const updated: LocalTrack = { ...track, bpm: grid.bpm ?? track.bpm, beatOffset: grid.beatOffset, beatPeriod: grid.beatPeriod, bpmStatus: 'ready' }
           await addTracks([updated])
           setTracks((current) => current.map((item) => item.id === track.id ? updated : item))
         } catch {
-          const updated: LocalTrack = { ...track, beatOffset: 0 }
+          const updated: LocalTrack = { ...track, beatOffset: 0, beatPeriod: track.bpm ? 60 / track.bpm : undefined }
           await addTracks([updated]).catch(() => undefined)
           setTracks((current) => current.map((item) => item.id === track.id ? updated : item))
         } finally { beatGridAnalyzing.current.delete(track.id) }
@@ -332,13 +332,13 @@ export default function App() {
       setSyncFeedback('Для Sync нужен определённый BPM у обоих треков.')
       return
     }
-    const rate = sourceTrack.bpm / targetTrack.bpm
+    const sourceBeat = sourceTrack.beatPeriod ?? 60 / sourceTrack.bpm
+    const targetBeat = targetTrack.beatPeriod ?? 60 / targetTrack.bpm
+    const rate = targetBeat / sourceBeat
     if (rate < 0.5 || rate > 2) {
       setSyncFeedback('Разница BPM слишком большая для безопасной синхронизации (диапазон 0.5×–2×).')
       return
     }
-    const sourceBeat = 60 / sourceTrack.bpm
-    const targetBeat = 60 / targetTrack.bpm
     const sourceOffset = sourceTrack.beatOffset ?? 0
     const targetOffset = targetTrack.beatOffset ?? 0
 
@@ -566,13 +566,14 @@ function Deck({ letter, track, tracks, onLoad, onImport, choosing, setChoosing, 
     return () => { active = false }
   }, [track?.id, track?.blob])
   useEffect(() => { setZoom(18); setAnchorTime(0); setGridNudge(0) }, [track?.id])
-  const beatCount = track?.bpm && duration > 0 ? Math.floor(duration * track.bpm / 60) : 0
+  const beatPeriod = track?.beatPeriod ?? (track?.bpm ? 60 / track.bpm : undefined)
+  const beatCount = beatPeriod && duration > 0 ? Math.floor(duration / beatPeriod) : 0
   const gridStride = Math.max(1, Math.ceil(beatCount / 1600))
   const gridLines = useMemo(() => track?.bpm && duration > 0 ? Array.from({ length: Math.floor(beatCount / gridStride) + 1 }, (_, i) => {
     const beat = i * gridStride
-    const beatTime = (track.beatOffset ?? 0) + gridNudge + beat * 60 / track.bpm!
+    const beatTime = (track.beatOffset ?? 0) + gridNudge + beat * (track.beatPeriod ?? 60 / track.bpm!)
     return <i key={beat} className={beat % 4 === 0 ? 'waveform-barline' : ''} style={{ left: (beatTime * zoom) + 'px' }} />
-  }) : [], [track?.bpm, track?.beatOffset, gridNudge, duration, beatCount, gridStride, zoom])
+  }) : [], [track?.bpm, track?.beatPeriod, track?.beatOffset, gridNudge, duration, beatCount, gridStride, zoom])
   const contentWidth = Math.max(duration * zoom, 1)
     const waveformStyle = { '--wave-content-width': `${contentWidth}px`, '--wave-offset': `calc(50% - ${time * zoom}px)` } as CSSProperties
   function beginWaveDrag(event: PointerEvent<HTMLDivElement>) {
