@@ -244,3 +244,11 @@
 .loop-controls button:disabled{opacity:.35;cursor:not-allowed}
 .loop-controls .loop-exit{min-width:25px;padding:0;color:#ff9c82;border-color:#59382f}
 @media(max-width:600px){.loop-controls{gap:4px;margin-top:5px;min-height:27px}.loop-controls button{min-width:29px;height:26px;padding:0 6px}.loop-controls span{font-size:8px}}
+
+
+/* Overlay toggle for waveform rendering, positioned on the left edge of each deck waveform. */
+.waveform-toggle{position:absolute;z-index:8;top:7px;left:7px;height:22px;padding:0 7px;border:1px solid #424a42;border-radius:5px;background:#101411eF;color:#aab4aa;font:700 8px ui-monospace,monospace;letter-spacing:.6px;cursor:pointer;backdrop-filter:blur(5px);touch-action:manipulation}
+.waveform-toggle.is-on{border-color:#66794a;color:var(--lime)}
+.wave-b .waveform-toggle.is-on{border-color:#80513e;color:var(--orange)}
+.waveform-toggle:focus-visible{outline:2px solid var(--lime);outline-offset:2px}
+@media(max-width:600px){.waveform-toggle{top:5px;left:5px;height:21px;padding:0 6px;font-size:7px}}
