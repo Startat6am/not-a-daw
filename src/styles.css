@@ -186,3 +186,46 @@
 .topbar .icon-button{width:30px;height:30px;min-width:30px;font-size:15px;border-radius:8px}
 .topbar .brand-mark{width:23px;height:23px;border-radius:6px;font-size:16px}
 @media(max-width:600px){.topbar{height:46px;margin-bottom:7px;border-bottom-color:#1b1f1c}.top-actions{gap:4px}.topbar .icon-button{width:27px;height:27px;min-width:27px;font-size:13px}.topbar .brand-mark{width:21px;height:21px;font-size:15px}.wordmark{gap:7px;font-size:12px}}
+
+
+/* Mobile compact mode: reclaim vertical space without shrinking primary touch controls. */
+@media(max-width:600px){
+  .app-shell{padding-bottom:12px}
+  .decks{gap:7px}
+  .deck{padding:8px;border-radius:11px}
+  .deck-head{gap:5px}
+  .deck-letter{width:25px;height:25px;border-radius:7px;font-size:12px}
+  .deck-track-title{font-size:10px}
+  .deck-time{font-size:8px}
+  .deck-menu{flex-basis:16px;width:16px;font-size:19px}
+  .waveform{height:84px;margin:5px 0 2px}
+  .waveform-caption{min-height:21px;margin-bottom:4px;gap:3px}
+  .waveform-zoom{gap:2px}
+  .waveform-zoom button{width:21px;height:21px}
+  .grid-adjust{gap:2px}
+  .grid-adjust span{min-width:31px;font-size:7px}
+  .grid-adjust button{width:19px;height:21px}
+  .deck-meta{font-size:9px}
+  .waveform-seek{gap:5px;margin:2px 0 5px}
+  .waveform-seek span{min-width:30px}
+  .transport{gap:4px;margin-top:6px}
+  .transport button{height:34px}
+  .sync-button{height:30px;margin-top:6px}
+  .deck-picker{gap:4px;margin-top:6px;max-height:120px}
+  .deck-picker button{padding:9px}
+  .mixer{margin-top:7px;padding:9px 11px 8px;border-radius:11px}
+  .crossfader-wrap{gap:9px;margin:11px 0 8px}
+  .mixer-bottom{font-size:8px;letter-spacing:.7px}
+  .library-section{margin-top:16px}
+  .library-heading{margin-bottom:8px;gap:8px}
+  .library-heading h2{font-size:18px}
+  .track-row{padding:7px;gap:5px}
+  .track-details{gap:2px}
+  .track-details strong{font-size:11px}
+  .track-details span{line-height:1.35}
+  footer{margin-top:20px;padding-top:10px}
+}
+@media(max-width:370px){
+  .deck{padding:11px}
+  .waveform{height:92px}
+}
