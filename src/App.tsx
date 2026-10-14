@@ -271,7 +271,7 @@ export default function App() {
   }, [tracks])
 
   useEffect(() => {
-    const pending = tracks.filter((track) => track.bpm && track.beatOffset === undefined && !beatGridAttempted.current.has(track.id) && !beatGridAnalyzing.current.has(track.id))
+    const pending = tracks.filter((track) => track.bpm && (track.beatOffset === undefined || track.beatPeriod === undefined) && !beatGridAttempted.current.has(track.id) && !beatGridAnalyzing.current.has(track.id))
     for (const track of pending) {
       beatGridAttempted.current.add(track.id)
       beatGridAnalyzing.current.add(track.id)
