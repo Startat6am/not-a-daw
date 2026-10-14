@@ -21,7 +21,7 @@ type WaveformLevel = { min: Float32Array; max: Float32Array }
 type WaveformPyramid = { levels: WaveformLevel[]; length: number; duration: number; peak: number; colors: Uint8Array }
 
 const waveformCache = new WeakMap<Blob, Promise<WaveformPyramid>>()
-function getWaveformPeaks(blob: Blob, bins = 65536): Promise<WaveformPyramid> {
+function getWaveformPeaks(blob: Blob, bins = 16384): Promise<WaveformPyramid> {
   const cached = waveformCache.get(blob)
   if (cached) return cached
   const task = (async () => {
@@ -55,11 +55,11 @@ function getWaveformPeaks(blob: Blob, bins = 65536): Promise<WaveformPyramid> {
       }
       // Analyze the track in short windows. Goertzel probes approximate bass, midrange and treble energy.
       // Each time slice gets its own color, so both decks show the same track-specific palette.
-      const colorCount = Math.min(512, Math.max(64, Math.floor(buffer.duration * 3)))
+      const colorCount = Math.min(256, Math.max(48, Math.floor(buffer.duration * 1.5)))
       const colors = new Uint8Array(colorCount * 3)
-      const probes = [70, 110, 180, 350, 800, 1800, 3500, 6500, 10000].filter((hz) => hz < buffer.sampleRate * 0.47)
+      const probes = [70, 140, 350, 1200, 4000, 9000].filter((hz) => hz < buffer.sampleRate * 0.47)
       const bandColors = [[255, 78, 48], [255, 194, 72], [64, 190, 255]]
-      const windowSize = 1024
+      const windowSize = 512
       for (let frame = 0; frame < colorCount; frame++) {
         const center = Math.floor((frame + 0.5) / colorCount * buffer.length)
         const start = Math.max(0, Math.min(buffer.length - windowSize, center - Math.floor(windowSize / 2)))
@@ -347,11 +347,11 @@ export default function App() {
     // track's detected grid phase instead of assuming beat zero at time 0.
     const sourcePhaseSeconds = ((source.currentTime - sourceOffset) % sourceBeat + sourceBeat) % sourceBeat
     const beatProgress = sourcePhaseSeconds / sourceBeat
-    const targetBeatIndex = Math.floor((destination.currentTime - targetOffset) / targetBeat)
+    const targetBeatIndex = Math.round((destination.currentTime - targetOffset) / targetBeat)
     const alignedTargetTime = targetOffset + targetBeatIndex * targetBeat + beatProgress * targetBeat
 
     destination.playbackRate = rate
-    destination.currentTime = Math.max(0, alignedTargetTime)
+    destination.currentTime = Math.max(0, Math.min(Number.isFinite(destination.duration) ? Math.max(0, destination.duration - 0.05) : alignedTargetTime, alignedTargetTime))
     setSyncRates((current) => ({ ...current, [target]: rate }))
     setSyncFeedback(`Дека ${target} синхронизирована с декой ${target === 'A' ? 'B' : 'A'} · сетка учтена · ${sourceTrack.bpm} BPM · скорость ${rate.toFixed(3)}×`)
   }
