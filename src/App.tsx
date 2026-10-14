@@ -18,7 +18,7 @@ function formatBytes(bytes: number) {
 }
 
 type WaveformLevel = { min: Float32Array; max: Float32Array }
-type WaveformPyramid = { levels: WaveformLevel[]; length: number; duration: number; peak: number }
+type WaveformPyramid = { levels: WaveformLevel[]; length: number; duration: number; peak: number; colors: Uint8Array }
 
 const waveformCache = new WeakMap<Blob, Promise<WaveformPyramid>>()
 function getWaveformPeaks(blob: Blob, bins = 65536): Promise<WaveformPyramid> {
@@ -53,6 +53,38 @@ function getWaveformPeaks(blob: Blob, bins = 65536): Promise<WaveformPyramid> {
         max[bin] = hi
         globalPeak = Math.max(globalPeak, Math.abs(lo), Math.abs(hi))
       }
+      // Analyze the track in short windows. Goertzel probes approximate bass, midrange and treble energy.
+      // Each time slice gets its own color, so both decks show the same track-specific palette.
+      const colorCount = Math.min(512, Math.max(64, Math.floor(buffer.duration * 3)))
+      const colors = new Uint8Array(colorCount * 3)
+      const probes = [70, 110, 180, 350, 800, 1800, 3500, 6500, 10000].filter((hz) => hz < buffer.sampleRate * 0.47)
+      const bandColors = [[255, 78, 48], [255, 194, 72], [64, 190, 255]]
+      const windowSize = 1024
+      for (let frame = 0; frame < colorCount; frame++) {
+        const center = Math.floor((frame + 0.5) / colorCount * buffer.length)
+        const start = Math.max(0, Math.min(buffer.length - windowSize, center - Math.floor(windowSize / 2)))
+        const sampleCount = Math.min(windowSize, buffer.length - start)
+        const energies = [0, 0, 0]
+        for (let p = 0; p < probes.length; p++) {
+          const omega = 2 * Math.PI * probes[p] / buffer.sampleRate
+          const coeff = 2 * Math.cos(omega)
+          let q1 = 0, q2 = 0
+          for (let i = 0; i < sampleCount; i++) {
+            const sample = channels.reduce((sum, channel) => sum + (channel[start + i] || 0), 0) / channels.length
+            const window = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / Math.max(1, sampleCount - 1))
+            const q0 = sample * window + coeff * q1 - q2
+            q2 = q1; q1 = q0
+          }
+          const energy = Math.max(0, q1 * q1 + q2 * q2 - coeff * q1 * q2)
+          energies[Math.floor(p / Math.max(1, probes.length) * 3)] += energy
+        }
+        const total = energies.reduce((sum, value) => sum + value, 0) || 1
+        const weights = energies.map((value) => Math.sqrt(value / total))
+        const weightTotal = weights.reduce((sum, value) => sum + value, 0) || 1
+        for (let channel = 0; channel < 3; channel++) {
+          colors[frame * 3 + channel] = Math.round(weights.reduce((sum, weight, band) => sum + weight * bandColors[band][channel], 0) / weightTotal)
+        }
+      }
       const levels: WaveformLevel[] = [{ min, max }]
       while (levels[levels.length - 1].min.length > 1) {
         const previous = levels[levels.length - 1]
@@ -67,7 +99,7 @@ function getWaveformPeaks(blob: Blob, bins = 65536): Promise<WaveformPyramid> {
         }
         levels.push({ min: nextMin, max: nextMax })
       }
-      return { levels, length: count, duration: buffer.duration, peak: globalPeak || 1 }
+      return { levels, length: count, duration: buffer.duration, peak: globalPeak || 1, colors }
     } finally {
       await context.close().catch(() => undefined)
     }
@@ -76,7 +108,7 @@ function getWaveformPeaks(blob: Blob, bins = 65536): Promise<WaveformPyramid> {
   return task
 }
 
-function WaveformCanvas({ waveform, time, zoom, duration, color }: { waveform: WaveformPyramid | null; time: number; zoom: number; duration: number; color: string }) {
+function WaveformCanvas({ waveform, time, zoom, duration }: { waveform: WaveformPyramid | null; time: number; zoom: number; duration: number }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   useEffect(() => {
     const canvas = canvasRef.current
@@ -107,30 +139,20 @@ function WaveformCanvas({ waveform, time, zoom, duration, color }: { waveform: W
       const xStart = Math.max(0, Math.ceil(width / 2 - time * zoom))
       const xEnd = Math.min(width - 1, Math.floor(width / 2 + (waveform.duration - time) * zoom))
       if (xEnd < xStart) return
-      context.beginPath()
-      let started = false
+      context.globalAlpha = 0.92
       for (let x = xStart; x <= xEnd; x++) {
         const sampleTime = time + (x - width / 2) / zoom
         const baseIndex = Math.max(0, Math.min(waveform.length - 1, Math.floor(sampleTime / waveform.duration * waveform.length)))
         const index = Math.min(level.min.length - 1, Math.floor(baseIndex / bucketSize))
-        const hi = level.max[index] / waveform.peak
-        const shapedTop = Math.sign(hi) * Math.pow(Math.abs(hi), 0.78)
-        const y = centerY - shapedTop * amplitude
-        if (!started) { context.moveTo(x + 0.5, y); started = true }
-        else context.lineTo(x + 0.5, y)
+        const hi = Math.max(0, level.max[index] / waveform.peak)
+        const lo = Math.min(0, level.min[index] / waveform.peak)
+        const top = centerY - Math.pow(hi, 0.78) * amplitude
+        const bottom = centerY - Math.sign(lo) * Math.pow(Math.abs(lo), 0.78) * amplitude
+        const colorIndex = Math.min(waveform.colors.length / 3 - 1, Math.max(0, Math.floor(sampleTime / waveform.duration * (waveform.colors.length / 3))))
+        const ci = colorIndex * 3
+        context.fillStyle = `rgb(${waveform.colors[ci]},${waveform.colors[ci + 1]},${waveform.colors[ci + 2]})`
+        context.fillRect(x, top, 1.5, Math.max(1, bottom - top))
       }
-      for (let x = xEnd; x >= xStart; x--) {
-        const sampleTime = time + (x - width / 2) / zoom
-        const baseIndex = Math.max(0, Math.min(waveform.length - 1, Math.floor(sampleTime / waveform.duration * waveform.length)))
-        const index = Math.min(level.min.length - 1, Math.floor(baseIndex / bucketSize))
-        const lo = level.min[index] / waveform.peak
-        const shapedBottom = Math.sign(lo) * Math.pow(Math.abs(lo), 0.78)
-        context.lineTo(x + 0.5, centerY - shapedBottom * amplitude)
-      }
-      context.closePath()
-      context.fillStyle = color
-      context.globalAlpha = 0.82
-      context.fill()
       context.globalAlpha = 1
     }
     draw()
@@ -141,7 +163,7 @@ function WaveformCanvas({ waveform, time, zoom, duration, color }: { waveform: W
       observer?.disconnect()
       window.removeEventListener('resize', draw)
     }
-  }, [waveform, time, zoom, duration, color])
+  }, [waveform, time, zoom, duration])
   return <canvas ref={canvasRef} className="waveform-canvas" aria-hidden="true" />
 }
 
@@ -569,7 +591,7 @@ function Deck({ letter, track, tracks, onLoad, onImport, choosing, setChoosing, 
       <div className="waveform-content" style={{ width: `${contentWidth}px`, left: `calc(50% - ${time * zoom}px)` }}>
         <div className="waveform-grid" aria-hidden="true">{gridLines}</div>
       </div>
-      <WaveformCanvas waveform={waveformPeaks} time={time} zoom={zoom} duration={duration || track?.duration || 0} color={letter === 'A' ? '#d7ff5e' : '#ff8b62'} />
+      <WaveformCanvas waveform={waveformPeaks} time={time} zoom={zoom} duration={duration || track?.duration || 0} />
       {!waveformPeaks && <span className="waveform-loading">{track ? 'ЗАГРУЗКА ВОЛНЫ…' : 'ЗАГРУЗИ ТРЕК'}</span>}
       <div className="waveform-anchor-line" style={{ left: `calc(50% + ${(anchorTime - time) * zoom}px)` }} aria-label={`Якорь ${formatDuration(anchorTime)}`} title={`Якорь ${formatDuration(anchorTime)}`} />
       <div className="waveform-center-line" aria-hidden="true" />
