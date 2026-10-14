@@ -558,14 +558,19 @@ function Deck({ letter, track, tracks, onLoad, onImport, choosing, setChoosing, 
   const [anchorTime, setAnchorTime] = useState(0)
   const [gridNudge, setGridNudge] = useState(0)
   const [titleOverflows, setTitleOverflows] = useState(false)
+  const [titleScrollDistance, setTitleScrollDistance] = useState(0)
   const titleViewportRef = useRef<HTMLDivElement>(null)
   const titleTextRef = useRef<HTMLSpanElement>(null)
   const dragRef = useRef<{ x: number; time: number; pointerId: number } | null>(null)
   useEffect(() => {
     const viewport = titleViewportRef.current
     const title = titleTextRef.current
-    if (!viewport || !title) { setTitleOverflows(false); return }
-    const measure = () => setTitleOverflows(title.scrollWidth > viewport.clientWidth + 1)
+    if (!viewport || !title) { setTitleOverflows(false); setTitleScrollDistance(0); return }
+    const measure = () => {
+      const distance = Math.max(0, title.scrollWidth - viewport.clientWidth)
+      setTitleScrollDistance(distance)
+      setTitleOverflows(distance > 1)
+    }
     measure()
     const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null
     observer?.observe(viewport)
@@ -614,7 +619,7 @@ function Deck({ letter, track, tracks, onLoad, onImport, choosing, setChoosing, 
   return <article className={`deck deck-${letter.toLowerCase()}`}>
     <div className="deck-head">
       <span className="deck-letter">{letter}</span>
-      <div className={`deck-track-title ${titleOverflows ? 'is-overflowing' : ''}`} ref={titleViewportRef} title={track?.name ?? '—'}>
+      <div className={`deck-track-title ${titleOverflows ? 'is-overflowing' : ''}`} ref={titleViewportRef} title={track?.name ?? '—'} style={{ '--title-scroll-distance': `${titleScrollDistance}px` } as CSSProperties}>
         <span className="deck-track-title-text" ref={titleTextRef}>{track?.name ?? '—'}</span>
         {titleOverflows && <span className="deck-track-title-copy" aria-hidden="true">{track?.name}</span>}
       </div>
