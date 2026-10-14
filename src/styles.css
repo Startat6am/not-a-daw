@@ -153,7 +153,7 @@
 /* Waveform-first decks: use the freed turntable space for a clearer, taller waveform. */
 .deck{display:flex;flex-direction:column}
 .deck-track{margin-top:10px;height:auto;min-height:38px;padding-top:4px}
-.waveform{height:132px;margin:10px 0 5px;background:linear-gradient(180deg,#0e1210 0%,#171d18 50%,#0e1210 100%)}
+.waveform{height:119px;margin:10px 0 5px;background:linear-gradient(180deg,#0e1210 0%,#171d18 50%,#0e1210 100%)}
 .waveform:before{background:#7a857a;opacity:.55}
 .waveform-grid i{opacity:.28}
 .waveform-grid i.waveform-barline{opacity:.75}
