@@ -116,7 +116,6 @@ function WaveformCanvas({ waveform, time, zoom, duration, color }: { waveform: W
         const lo = level.min[index] / waveform.peak
         const hi = level.max[index] / waveform.peak
         const shapedTop = Math.sign(hi) * Math.pow(Math.abs(hi), 0.78)
-        const shapedBottom = Math.sign(lo) * Math.pow(Math.abs(lo), 0.78)
         const y = centerY - shapedTop * amplitude
         if (!started) { context.moveTo(x + 0.5, y); started = true }
         else context.lineTo(x + 0.5, y)
@@ -516,12 +515,12 @@ function Deck({ letter, track, tracks, onLoad, onImport, choosing, setChoosing, 
   const dragRef = useRef<{ x: number; time: number; pointerId: number } | null>(null)
   useEffect(() => {
     let active = true
-    setWaveformPeaks([])
+    setWaveformPeaks(null)
     if (track?.blob) {
       void getWaveformPeaks(track.blob).then((peaks) => {
         if (active) setWaveformPeaks(peaks)
       }).catch(() => {
-        if (active) setWaveformPeaks([])
+        if (active) setWaveformPeaks(null)
       })
     }
     return () => { active = false }
