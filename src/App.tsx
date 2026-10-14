@@ -604,7 +604,7 @@ function Deck({ letter, track, tracks, onLoad, onImport, choosing, setChoosing, 
   const gridLines = useMemo(() => track?.bpm && duration > 0 ? Array.from({ length: Math.floor(beatCount / gridStride) + 1 }, (_, i) => {
     const beat = i * gridStride
     const beatTime = (track.beatOffset ?? 0) + gridNudge + beat * (track.beatPeriod ?? 60 / track.bpm!)
-    return <i key={beat} className={beat % 4 === 0 ? 'waveform-barline' : ''} style={{ left: (beatTime * zoom) + 'px' }} />
+    return <i key={beat} className={beat === 0 ? 'waveform-downbeat' : beat % 4 === 0 ? 'waveform-barline' : ''} style={{ left: (beatTime * zoom) + 'px' }} />
   }) : [], [track?.bpm, track?.beatPeriod, track?.beatOffset, gridNudge, duration, beatCount, gridStride, zoom])
   const contentWidth = Math.max(duration * zoom, 1)
     const waveformStyle = { '--wave-content-width': `${contentWidth}px`, '--wave-offset': `calc(50% - ${time * zoom}px)` } as CSSProperties
