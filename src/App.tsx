@@ -559,7 +559,21 @@ function Deck({ letter, track, tracks, onLoad, onImport, choosing, setChoosing, 
   const [zoom, setZoom] = useState(18)
   const [anchorTime, setAnchorTime] = useState(0)
   const [gridNudge, setGridNudge] = useState(0)
+  const [titleOverflows, setTitleOverflows] = useState(false)
+  const titleViewportRef = useRef<HTMLDivElement>(null)
+  const titleTextRef = useRef<HTMLSpanElement>(null)
   const dragRef = useRef<{ x: number; time: number; pointerId: number } | null>(null)
+  useEffect(() => {
+    const viewport = titleViewportRef.current
+    const title = titleTextRef.current
+    if (!viewport || !title) { setTitleOverflows(false); return }
+    const measure = () => setTitleOverflows(title.scrollWidth > viewport.clientWidth + 1)
+    measure()
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null
+    observer?.observe(viewport)
+    observer?.observe(title)
+    return () => observer?.disconnect()
+  }, [track?.id, track?.name])
   useEffect(() => {
     let active = true
     setWaveformPeaks(null)
@@ -600,9 +614,15 @@ function Deck({ letter, track, tracks, onLoad, onImport, choosing, setChoosing, 
     if (dragRef.current?.pointerId === event.pointerId) dragRef.current = null
   }
   return <article className={`deck deck-${letter.toLowerCase()}`}>
-    <div className="deck-head"><span className="deck-letter">{letter}</span><span className="deck-time">{formatDuration(time)} / {formatDuration(duration || track?.duration)}</span><button className="deck-menu" aria-label={`Выбрать трек для деки ${letter}`} onClick={() => tracks.length ? setChoosing(!choosing) : onImport()}>•••</button></div>
-    <div className="deck-track">{track?.name ?? '—'}<span>{track ? formatBytes(track.size) : ' '}</span></div>
-    {loadFeedback && track && <div className="deck-load-feedback" title={loadFeedback}>{loadFeedback}</div>}
+    <div className="deck-head">
+      <span className="deck-letter">{letter}</span>
+      <div className={`deck-track-title ${titleOverflows ? 'is-overflowing' : ''}`} ref={titleViewportRef} title={track?.name ?? '—'}>
+        <span className="deck-track-title-text" ref={titleTextRef}>{track?.name ?? '—'}</span>
+        {titleOverflows && <span className="deck-track-title-copy" aria-hidden="true">{track?.name}</span>}
+      </div>
+      <span className="deck-time">{formatDuration(time)} / {formatDuration(duration || track?.duration)}</span>
+      <button className="deck-menu" aria-label={`Выбрать трек для деки ${letter}`} onClick={() => tracks.length ? setChoosing(!choosing) : onImport()}>⋮</button>
+    </div>
     <div className={`waveform wave-${letter.toLowerCase()}`} style={waveformStyle} aria-label={`Увеличенная волна ${letter}; текущая позиция по центру; свайп для перемотки`} role="slider" aria-valuemin={0} aria-valuemax={duration || 0} aria-valuenow={time} tabIndex={track ? 0 : -1}
       onPointerDown={beginWaveDrag} onPointerMove={moveWaveDrag} onPointerUp={endWaveDrag} onPointerCancel={endWaveDrag}
       onKeyDown={(event) => { if (event.key === 'ArrowLeft') onSeek(Math.max(0, time - 0.1)); if (event.key === 'ArrowRight') onSeek(Math.min(duration, time + 0.1)) }}>
