@@ -565,6 +565,7 @@ export default function App() {
 
 function Deck({ letter, track, tracks, onLoad, onImport, choosing, setChoosing, playing, time, duration, onPlay, onSeek, onStop, onSync, onGridNudge, syncRate }: { letter: 'A' | 'B'; track?: LocalTrack; tracks: LocalTrack[]; onLoad: (id: string) => void; onImport: () => void; choosing: boolean; setChoosing: (value: boolean) => void; playing: boolean; time: number; duration: number; onPlay: () => void; onSeek: (value: number) => void; onStop: (anchor: number) => void; onSync: () => void; onGridNudge: (delta: number) => void; syncRate: number }) {
   const [waveformPeaks, setWaveformPeaks] = useState<WaveformPyramid | null>(null)
+  const [waveformVisible, setWaveformVisible] = useState(true)
   const [zoom, setZoom] = useState(18)
   const [anchorTime, setAnchorTime] = useState(0)
   const [gridNudge, setGridNudge] = useState(0)
@@ -674,8 +675,9 @@ function Deck({ letter, track, tracks, onLoad, onImport, choosing, setChoosing, 
       <div className="waveform-content" style={{ width: `${contentWidth}px`, left: `calc(50% - ${time * zoom}px)` }}>
         <div className="waveform-grid" aria-hidden="true">{gridLines}</div>
       </div>
-      <WaveformCanvas waveform={waveformPeaks} time={time} zoom={zoom} duration={duration || track?.duration || 0} />
-      {!waveformPeaks && <span className="waveform-loading">{track ? 'ЗАГРУЗКА ВОЛНЫ…' : 'ЗАГРУЗИ ТРЕК'}</span>}
+      {waveformVisible && <WaveformCanvas waveform={waveformPeaks} time={time} zoom={zoom} duration={duration || track?.duration || 0} />}
+      {waveformVisible && !waveformPeaks && <span className="waveform-loading">{track ? 'ЗАГРУЗКА ВОЛНЫ…' : 'ЗАГРУЗИ ТРЕК'}</span>}
+      <button type="button" className={`waveform-toggle ${waveformVisible ? 'is-on' : ''}`} aria-pressed={waveformVisible} aria-label={waveformVisible ? 'Скрыть отрисовку волны' : 'Показать отрисовку волны'} title={waveformVisible ? 'Скрыть волну' : 'Показать волну'} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); setWaveformVisible((visible) => !visible) }}>{waveformVisible ? 'WAVE ON' : 'WAVE OFF'}</button>
       <div className="waveform-anchor-line" style={{ left: `calc(50% + ${(anchorTime - time) * zoom}px)` }} aria-label={`Якорь ${formatDuration(anchorTime)}`} title={`Якорь ${formatDuration(anchorTime)}`} />
       <div className="waveform-center-line" aria-hidden="true" />
     </div>
