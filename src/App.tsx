@@ -202,6 +202,7 @@ export default function App() {
   const [loadFeedbackB, setLoadFeedbackB] = useState('')
   const [syncFeedback, setSyncFeedback] = useState('')
   const [syncRates, setSyncRates] = useState<{ A: number; B: number }>({ A: 1, B: 1 })
+  const [syncArmed, setSyncArmed] = useState<{ A: boolean; B: boolean }>({ A: false, B: false })
   const [telegramTracks, setTelegramTracks] = useState<TelegramTrack[]>([])
   const [telegramMaxUpdateId, setTelegramMaxUpdateId] = useState<number | null>(null)
   const [telegramDiagnostics, setTelegramDiagnostics] = useState<{ botUsername: string | null; webhookEnabled: boolean; webhookPendingCount: number; pendingUpdates: number; privateMessages: number; recognizedAudioFiles: number } | null>(null)
@@ -232,17 +233,17 @@ export default function App() {
   }, [refresh])
 
   useEffect(() => {
-    if (!loadedA) { setSrcA(''); setTimeA(0); setDurationA(0); setPlayingA(false); if (audioA.current) { audioA.current.pause(); audioA.current.playbackRate = 1 }; setSyncRates((r) => ({ ...r, A: 1 })); return }
+    if (!loadedA) { setSrcA(''); setTimeA(0); setDurationA(0); setPlayingA(false); if (audioA.current) { audioA.current.pause(); audioA.current.playbackRate = 1 }; setSyncRates((r) => ({ ...r, A: 1 })); setSyncArmed((r) => ({ ...r, A: false })); return }
     const url = URL.createObjectURL(loadedA.blob)
     if (audioA.current) { audioA.current.pause(); audioA.current.currentTime = 0; audioA.current.playbackRate = 1 }
-    setTimeA(0); setPlayingA(false); setSrcA(url); setLoadFeedbackA(`Загружено: ${loadedA.name}`); setSyncRates((r) => ({ ...r, A: 1 }))
+    setTimeA(0); setPlayingA(false); setSrcA(url); setLoadFeedbackA(`Загружено: ${loadedA.name}`); setSyncRates((r) => ({ ...r, A: 1 })); setSyncArmed((r) => ({ ...r, A: false }))
     return () => URL.revokeObjectURL(url)
   }, [loadedA])
   useEffect(() => {
-    if (!loadedB) { setSrcB(''); setTimeB(0); setDurationB(0); setPlayingB(false); if (audioB.current) { audioB.current.pause(); audioB.current.playbackRate = 1 }; setSyncRates((r) => ({ ...r, B: 1 })); return }
+    if (!loadedB) { setSrcB(''); setTimeB(0); setDurationB(0); setPlayingB(false); if (audioB.current) { audioB.current.pause(); audioB.current.playbackRate = 1 }; setSyncRates((r) => ({ ...r, B: 1 })); setSyncArmed((r) => ({ ...r, B: false })); return }
     const url = URL.createObjectURL(loadedB.blob)
     if (audioB.current) { audioB.current.pause(); audioB.current.currentTime = 0; audioB.current.playbackRate = 1 }
-    setTimeB(0); setPlayingB(false); setSrcB(url); setLoadFeedbackB(`Загружено: ${loadedB.name}`); setSyncRates((r) => ({ ...r, B: 1 }))
+    setTimeB(0); setPlayingB(false); setSrcB(url); setLoadFeedbackB(`Загружено: ${loadedB.name}`); setSyncRates((r) => ({ ...r, B: 1 })); setSyncArmed((r) => ({ ...r, B: false }))
     return () => URL.revokeObjectURL(url)
   }, [loadedB])
 
@@ -347,12 +348,15 @@ export default function App() {
     // track's detected grid phase instead of assuming beat zero at time 0.
     const sourcePhaseSeconds = ((source.currentTime - sourceOffset) % sourceBeat + sourceBeat) % sourceBeat
     const beatProgress = sourcePhaseSeconds / sourceBeat
-    const targetBeatIndex = Math.round((destination.currentTime - targetOffset) / targetBeat)
-    const alignedTargetTime = targetOffset + targetBeatIndex * targetBeat + beatProgress * targetBeat
+    // Choose the nearest target beat position that matches the source's current phase.
+    // Subtract phase before rounding so we pick the closest valid alignment.
+    const targetBeatIndex = Math.round((destination.currentTime - targetOffset) / targetBeat - beatProgress)
+    const alignedTargetTime = targetOffset + (targetBeatIndex + beatProgress) * targetBeat
 
     destination.playbackRate = rate
     destination.currentTime = Math.max(0, Math.min(Number.isFinite(destination.duration) ? Math.max(0, destination.duration - 0.05) : alignedTargetTime, alignedTargetTime))
     setSyncRates((current) => ({ ...current, [target]: rate }))
+    setSyncArmed((current) => ({ ...current, [target]: true }))
     setSyncFeedback(`Дека ${target} синхронизирована с декой ${target === 'A' ? 'B' : 'A'} · сетка учтена · ${sourceTrack.bpm} BPM · скорость ${rate.toFixed(3)}×`)
   }
 
@@ -361,6 +365,9 @@ export default function App() {
     const source = which === 'A' ? srcA : srcB
     if (!audio || !source) { setError('Сначала добавь трек и загрузи его в дек'); return }
     if (!audio.paused) { audio.pause(); return }
+    // Re-align immediately before playback if Sync was pressed while this deck was paused.
+    const otherAudio = which === 'A' ? audioB.current : audioA.current
+    if (syncArmed[which] && otherAudio && !otherAudio.paused) syncDeck(which)
     const mix = crossfade / 100
     audio.volume = which === 'A' ? Math.cos(mix * Math.PI / 2) : Math.sin(mix * Math.PI / 2)
     try { await audio.play(); setError('') } catch { setError(`Дека ${which}: браузер не смог запустить аудио. Проверь формат файла и громкость устройства.`) }
