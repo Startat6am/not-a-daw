@@ -604,11 +604,21 @@ function Deck({ letter, track, tracks, onLoad, onImport, choosing, setChoosing, 
   const beatPeriod = track?.beatPeriod ?? (track?.bpm ? 60 / track.bpm : undefined)
   const beatCount = beatPeriod && duration > 0 ? Math.floor(duration / beatPeriod) : 0
   const gridStride = Math.max(1, Math.ceil(beatCount / 1600))
-  const gridLines = useMemo(() => track?.bpm && duration > 0 ? Array.from({ length: Math.floor(beatCount / gridStride) + 1 }, (_, i) => {
-    const beat = i * gridStride
-    const beatTime = (track.beatOffset ?? 0) + gridNudge + beat * (60 / track.bpm!)
-    return <i key={beat} className={beat === 0 ? 'waveform-downbeat' : beat % 4 === 0 ? 'waveform-barline' : ''} style={{ left: (beatTime * zoom) + 'px' }} />
-  }) : [], [track?.bpm, track?.beatPeriod, track?.beatOffset, gridNudge, duration, beatCount, gridStride, zoom])
+  const gridLines = useMemo(() => {
+    if (!track?.bpm || duration <= 0) return []
+    const period = 60 / track.bpm
+    const phase = (track.beatOffset ?? 0) + gridNudge
+    // Keep beat numbers anchored to the track's grid phase; generate lines on
+    // both sides of time zero so nudging moves the grid instead of restarting it.
+    const firstBeat = Math.floor(-phase / period / gridStride) * gridStride
+    const lastBeat = Math.ceil((duration - phase) / period / gridStride) * gridStride
+    const lines = []
+    for (let beat = firstBeat; beat <= lastBeat; beat += gridStride) {
+      const beatTime = phase + beat * period
+      lines.push(<i key={beat} className={beat === 0 ? 'waveform-downbeat' : beat % 4 === 0 ? 'waveform-barline' : ''} style={{ left: (beatTime * zoom) + 'px' }} />)
+    }
+    return lines
+  }, [track?.bpm, track?.beatOffset, gridNudge, duration, gridStride, zoom])
   const contentWidth = Math.max(duration * zoom, 1)
     const waveformStyle = { '--wave-content-width': `${contentWidth}px`, '--wave-offset': `calc(50% - ${time * zoom}px)` } as CSSProperties
   function beginWaveDrag(event: PointerEvent<HTMLDivElement>) {
