@@ -148,3 +148,16 @@
 .waveform-anchor-line{position:absolute;z-index:4;top:0;bottom:0;width:1px;border-left:1px dashed #f4f7ef;opacity:.85;pointer-events:none}
 
 .grid-adjust{display:flex;align-items:center;gap:3px;white-space:nowrap}.grid-adjust button{display:grid;place-items:center;width:17px;height:17px;padding:0;border:1px solid #39413b;border-radius:4px;background:#202522;color:#cbd4ca;font-size:11px;line-height:1}.grid-adjust button:disabled{opacity:.3}.grid-adjust span{min-width:36px;text-align:center}
+
+
+/* Waveform-first decks: use the freed turntable space for a clearer, taller waveform. */
+.deck{display:flex;flex-direction:column}
+.deck-track{margin-top:10px;height:auto;min-height:38px;padding-top:4px}
+.waveform{height:132px;margin:10px 0 5px;background:linear-gradient(180deg,#0e1210 0%,#171d18 50%,#0e1210 100%)}
+.waveform:before{background:#7a857a;opacity:.55}
+.waveform-grid i{opacity:.28}
+.waveform-grid i.waveform-barline{opacity:.75}
+.waveform-canvas{z-index:3}
+.waveform-center-line{width:2px;background:#f8faf5;box-shadow:0 0 8px #fff8}
+.waveform-caption{min-height:24px}
+@media(max-width:600px){.waveform{height:108px;margin:8px 0 4px}.deck-track{min-height:34px;margin-top:8px}}
