@@ -10,6 +10,7 @@ export type LocalTrack = {
   sourceUpdateId?: number
   bpm?: number
   beatOffset?: number
+  beatPeriod?: number
   bpmStatus?: 'pending' | 'ready' | 'unavailable'
 }
 
