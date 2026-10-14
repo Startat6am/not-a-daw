@@ -130,3 +130,8 @@
 .wave-b .waveform-real path{fill:var(--orange);stroke:var(--orange)}
 
 .waveform-loading{position:absolute;inset:0;display:grid;place-items:center;width:100%;color:#788279;text-align:center;font:8px ui-monospace,monospace;letter-spacing:1px}
+
+
+/* High-resolution mono waveform: precomputed min/max peak pyramid rendered only in the viewport. */
+.waveform-canvas{position:absolute;z-index:3;inset:0;width:100%;height:100%;display:block;pointer-events:none}
+.waveform-grid{z-index:1}
