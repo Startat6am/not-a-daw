@@ -211,6 +211,20 @@ function WaveformCanvas({ waveform, time, zoom, duration, playing }: { waveform:
       canvas.style.transform = 'translate3d(0,0,0)'
     }
   }, [playing, zoom, duration, waveform])
+  // Keep paused waveform scrubbing visually immediate without re-rasterizing every pointer move.
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas || playing) return
+    const width = canvas.clientWidth
+    const delta = (baseTimeRef.current - time) * zoom
+    if (Math.abs(delta) > Math.max(80, width * 0.4)) {
+      baseTimeRef.current = time
+      drawRef.current()
+      canvas.style.transform = 'translate3d(0,0,0)'
+    } else {
+      canvas.style.transform = 'translate3d(' + delta + 'px,0,0)'
+    }
+  }, [time, playing, zoom])
   return <canvas ref={canvasRef} className="waveform-canvas" aria-hidden="true" />
 }
 
@@ -325,8 +339,11 @@ export default function App() {
     const context = audioContextRef.current
     const gain = gainsRef.current[which]
     if (!context || !gain) throw new Error('Не удалось запустить аудиодвижок')
-    await context.resume()
-    stopEngine(which)
+    if (context.state !== 'running') await context.resume()
+    // Replace the source without toggling React playing state off and back on.
+    const previousSource = sourcesRef.current[which]
+    sourcesRef.current[which] = null
+    if (previousSource) { previousSource.onended = null; try { previousSource.stop() } catch { /* already stopped */ } }
     // Restore the current crossfader level after stopEngine's instant mute.
     const mix = crossfade / 100
     gain.gain.cancelScheduledValues(context.currentTime)
@@ -463,6 +480,12 @@ export default function App() {
     if (engineRef.current.B.playing && loadedB) void startEngine('B', loadedB, getDeckTime('B'), loopRanges.B).catch(() => setError('Не удалось обновить цикл деки B'))
     else { engineRef.current.B.loopStart = loopRanges.B?.start ?? null; engineRef.current.B.loopEnd = loopRanges.B?.end ?? null }
   }, [loopRanges.B])
+
+  // Decode selected tracks before the first Play press to avoid waiting for full-file decode on transport.
+  useEffect(() => {
+    if (loadedA) void ensureBuffer(loadedA).catch(() => undefined)
+    if (loadedB && loadedB.id !== loadedA?.id) void ensureBuffer(loadedB).catch(() => undefined)
+  }, [loadedA?.id, loadedB?.id])
 
   // Smooth playhead updates; position comes from AudioContext's high-resolution clock.
   useEffect(() => {
@@ -803,7 +826,7 @@ function Deck({ letter, track, tracks, onLoad, onImport, choosing, setChoosing, 
   }
   const beatPeriod = track?.beatPeriod ?? (track?.bpm ? 60 / track.bpm : undefined)
   const beatCount = beatPeriod && duration > 0 ? Math.floor(duration / beatPeriod) : 0
-  const gridStride = Math.max(1, Math.ceil(beatCount / 240))
+  const gridStride = Math.max(1, Math.ceil(beatCount / 1600))
   const gridLines = useMemo(() => {
     if (!track?.bpm || duration <= 0) return []
     const period = 60 / track.bpm
