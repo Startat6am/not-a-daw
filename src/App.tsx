@@ -17,6 +17,7 @@ function formatBytes(bytes: number) {
   return bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
+type LoopRange = { start: number; end: number }
 type WaveformLevel = { min: Float32Array; max: Float32Array }
 type WaveformPyramid = { levels: WaveformLevel[]; length: number; duration: number; peak: number; colors: Uint8Array }
 
@@ -201,6 +202,7 @@ export default function App() {
   const [syncFeedback, setSyncFeedback] = useState('')
   const [syncRates, setSyncRates] = useState<{ A: number; B: number }>({ A: 1, B: 1 })
   const [syncArmed, setSyncArmed] = useState<{ A: boolean; B: boolean }>({ A: false, B: false })
+  const [loopRanges, setLoopRanges] = useState<{ A: LoopRange | null; B: LoopRange | null }>({ A: null, B: null })
   const [telegramTracks, setTelegramTracks] = useState<TelegramTrack[]>([])
   const [telegramMaxUpdateId, setTelegramMaxUpdateId] = useState<number | null>(null)
   const [telegramDiagnostics, setTelegramDiagnostics] = useState<{ botUsername: string | null; webhookEnabled: boolean; webhookPendingCount: number; pendingUpdates: number; privateMessages: number; recognizedAudioFiles: number } | null>(null)
@@ -217,8 +219,101 @@ export default function App() {
   const beatGridAttempted = useRef(new Set<string>())
   const audioA = useRef<HTMLAudioElement>(null)
   const audioB = useRef<HTMLAudioElement>(null)
-  const getTimeA = useCallback(() => audioA.current?.currentTime ?? 0, [])
-  const getTimeB = useCallback(() => audioB.current?.currentTime ?? 0, [])
+  const audioContextRef = useRef<AudioContext | null>(null)
+  const decodedBuffersRef = useRef(new Map<string, Promise<AudioBuffer>>())
+  const sourcesRef = useRef<{ A: AudioBufferSourceNode | null; B: AudioBufferSourceNode | null }>({ A: null, B: null })
+  const gainsRef = useRef<{ A: GainNode | null; B: GainNode | null }>({ A: null, B: null })
+  const engineRef = useRef({
+    A: { trackId: '', startedAt: 0, offset: 0, playing: false, rate: 1, loopStart: null as number | null, loopEnd: null as number | null, duration: 0 },
+    B: { trackId: '', startedAt: 0, offset: 0, playing: false, rate: 1, loopStart: null as number | null, loopEnd: null as number | null, duration: 0 },
+  })
+  const getDeckTime = useCallback((which: 'A' | 'B') => {
+    const engine = engineRef.current[which]
+    if (!engine.playing) return engine.offset
+    const context = audioContextRef.current
+    const raw = engine.offset + Math.max(0, (context?.currentTime ?? engine.startedAt) - engine.startedAt) * engine.rate
+    if (engine.loopStart !== null && engine.loopEnd !== null && engine.loopEnd > engine.loopStart && raw >= engine.loopEnd) {
+      return engine.loopStart + ((raw - engine.loopStart) % (engine.loopEnd - engine.loopStart))
+    }
+    return Math.min(engine.duration || raw, raw)
+  }, [])
+  const getTimeA = useCallback(() => getDeckTime('A'), [getDeckTime])
+  const getTimeB = useCallback(() => getDeckTime('B'), [getDeckTime])
+  function stopEngine(which: 'A' | 'B') {
+    const current = engineRef.current[which]
+    const position = getDeckTime(which)
+    const source = sourcesRef.current[which]
+    sourcesRef.current[which] = null
+    if (source) { source.onended = null; try { source.stop() } catch { /* already stopped */ } }
+    engineRef.current[which] = { ...current, offset: position, playing: false, startedAt: 0 }
+    if (which === 'A') setPlayingA(false); else setPlayingB(false)
+  }
+  async function ensureBuffer(track: LocalTrack) {
+    let pending = decodedBuffersRef.current.get(track.id)
+    if (!pending) {
+      pending = (async () => {
+        const scope = window as typeof window & { webkitAudioContext?: typeof AudioContext }
+        const AudioContextClass = window.AudioContext || scope.webkitAudioContext
+        if (!AudioContextClass) throw new Error('Web Audio API недоступен в этом браузере')
+        const context = audioContextRef.current ?? new AudioContextClass()
+        audioContextRef.current = context
+        if (!gainsRef.current.A) {
+          const gainA = context.createGain(); gainA.connect(context.destination); gainsRef.current.A = gainA
+          const gainB = context.createGain(); gainB.connect(context.destination); gainsRef.current.B = gainB
+        }
+        return context.decodeAudioData(await track.blob.arrayBuffer())
+      })()
+      decodedBuffersRef.current.set(track.id, pending)
+    }
+    return pending
+  }
+  async function startEngine(which: 'A' | 'B', track: LocalTrack, offset: number, loop: LoopRange | null) {
+    const buffer = await ensureBuffer(track)
+    const context = audioContextRef.current
+    const gain = gainsRef.current[which]
+    if (!context || !gain) throw new Error('Не удалось запустить аудиодвижок')
+    await context.resume()
+    stopEngine(which)
+    const current = engineRef.current[which]
+    const rate = current.rate
+    const safeOffset = Math.max(0, Math.min(Math.max(0, buffer.duration - 0.001), offset))
+    const validLoop = loop && loop.end > loop.start && loop.start >= 0 && loop.end <= buffer.duration ? loop : null
+    const normalizedOffset = validLoop && safeOffset >= validLoop.end
+      ? validLoop.start + ((safeOffset - validLoop.start) % (validLoop.end - validLoop.start))
+      : safeOffset
+    const source = context.createBufferSource()
+    source.buffer = buffer
+    source.playbackRate.value = rate
+    if (validLoop) { source.loop = true; source.loopStart = validLoop.start; source.loopEnd = validLoop.end }
+    source.connect(gain)
+    engineRef.current[which] = { trackId: track.id, startedAt: context.currentTime, offset: normalizedOffset, playing: true, rate, loopStart: validLoop?.start ?? null, loopEnd: validLoop?.end ?? null, duration: buffer.duration }
+    sourcesRef.current[which] = source
+    source.onended = () => {
+      if (sourcesRef.current[which] !== source) return
+      sourcesRef.current[which] = null
+      const state = engineRef.current[which]
+      if (!state.loopStart) {
+        engineRef.current[which] = { ...state, offset: state.duration, playing: false }
+        if (which === 'A') setPlayingA(false); else setPlayingB(false)
+      }
+    }
+    source.start(0, normalizedOffset)
+    if (which === 'A') setPlayingA(true); else setPlayingB(true)
+  }
+  function seekEngine(which: 'A' | 'B', value: number) {
+    const state = engineRef.current[which]
+    const duration = state.duration || (which === 'A' ? durationA : durationB)
+    const target = Math.max(0, Math.min(duration || value, value))
+    const track = which === 'A' ? loadedA : loadedB
+    if (state.playing && track) {
+      void startEngine(which, track, target, loopRanges[which]).catch(() => setError('Не удалось переместить позицию аудио'))
+    } else {
+      engineRef.current[which] = { ...state, offset: target }
+    }
+    if (which === 'A') setTimeA(target); else setTimeB(target)
+  }
+  const onLoopA = useCallback((range: LoopRange | null) => setLoopRanges((current) => current.A?.start === range?.start && current.A?.end === range?.end ? current : { ...current, A: range }), [])
+  const onLoopB = useCallback((range: LoopRange | null) => setLoopRanges((current) => current.B?.start === range?.start && current.B?.end === range?.end ? current : { ...current, B: range }), [])
   const loadedA = tracks.find((track) => track.id === deckA)
   const loadedB = tracks.find((track) => track.id === deckB)
   const detailTrack = tracks.find((track) => track.id === detailTrackId)
@@ -233,14 +328,18 @@ export default function App() {
   }, [refresh])
 
   useEffect(() => {
-    if (!loadedA) { setSrcA(''); setTimeA(0); setDurationA(0); setPlayingA(false); if (audioA.current) { audioA.current.pause(); audioA.current.playbackRate = 1 }; setSyncRates((r) => ({ ...r, A: 1 })); setSyncArmed((r) => ({ ...r, A: false })); return }
+    stopEngine('A')
+    engineRef.current.A = { ...engineRef.current.A, trackId: loadedA?.id ?? '', offset: 0, playing: false, rate: 1, loopStart: null, loopEnd: null, duration: loadedA?.duration ?? 0 }
+    if (!loadedA) { setSrcA(''); setTimeA(0); setDurationA(0); setSyncRates((r) => ({ ...r, A: 1 })); setSyncArmed((r) => ({ ...r, A: false })); return }
     const url = URL.createObjectURL(loadedA.blob)
     if (audioA.current) { audioA.current.pause(); audioA.current.currentTime = 0; audioA.current.playbackRate = 1 }
     setTimeA(0); setPlayingA(false); setSrcA(url); setSyncRates((r) => ({ ...r, A: 1 })); setSyncArmed((r) => ({ ...r, A: false }))
     return () => URL.revokeObjectURL(url)
   }, [loadedA])
   useEffect(() => {
-    if (!loadedB) { setSrcB(''); setTimeB(0); setDurationB(0); setPlayingB(false); if (audioB.current) { audioB.current.pause(); audioB.current.playbackRate = 1 }; setSyncRates((r) => ({ ...r, B: 1 })); setSyncArmed((r) => ({ ...r, B: false })); return }
+    stopEngine('B')
+    engineRef.current.B = { ...engineRef.current.B, trackId: loadedB?.id ?? '', offset: 0, playing: false, rate: 1, loopStart: null, loopEnd: null, duration: loadedB?.duration ?? 0 }
+    if (!loadedB) { setSrcB(''); setTimeB(0); setDurationB(0); setSyncRates((r) => ({ ...r, B: 1 })); setSyncArmed((r) => ({ ...r, B: false })); return }
     const url = URL.createObjectURL(loadedB.blob)
     if (audioB.current) { audioB.current.pause(); audioB.current.currentTime = 0; audioB.current.playbackRate = 1 }
     setTimeB(0); setPlayingB(false); setSrcB(url); setSyncRates((r) => ({ ...r, B: 1 })); setSyncArmed((r) => ({ ...r, B: false }))
@@ -293,26 +392,37 @@ export default function App() {
 
   useEffect(() => {
     const p = crossfade / 100
-    if (audioA.current) audioA.current.volume = Math.cos(p * Math.PI / 2)
-    if (audioB.current) audioB.current.volume = Math.sin(p * Math.PI / 2)
+    if (gainsRef.current.A) gainsRef.current.A.gain.setTargetAtTime(Math.cos(p * Math.PI / 2), audioContextRef.current?.currentTime ?? 0, 0.01)
+    if (gainsRef.current.B) gainsRef.current.B.gain.setTargetAtTime(Math.sin(p * Math.PI / 2), audioContextRef.current?.currentTime ?? 0, 0.01)
   }, [crossfade, srcA, srcB])
 
-  // Smooth playhead updates at ~30 fps; waveform geometry is memoized separately.
+  // Recreate a source only when its loop boundaries change; the actual loop edge
+  // is handled by the audio renderer, not by a JavaScript timer or React effect.
+  useEffect(() => {
+    if (engineRef.current.A.playing && loadedA) void startEngine('A', loadedA, getDeckTime('A'), loopRanges.A).catch(() => setError('Не удалось обновить цикл деки A'))
+    else { engineRef.current.A.loopStart = loopRanges.A?.start ?? null; engineRef.current.A.loopEnd = loopRanges.A?.end ?? null }
+  }, [loopRanges.A])
+  useEffect(() => {
+    if (engineRef.current.B.playing && loadedB) void startEngine('B', loadedB, getDeckTime('B'), loopRanges.B).catch(() => setError('Не удалось обновить цикл деки B'))
+    else { engineRef.current.B.loopStart = loopRanges.B?.start ?? null; engineRef.current.B.loopEnd = loopRanges.B?.end ?? null }
+  }, [loopRanges.B])
+
+  // Smooth playhead updates; position comes from AudioContext's high-resolution clock.
   useEffect(() => {
     if (!playingA && !playingB) return
     let frame = 0
     let lastUpdate = 0
     const tick = (now: number) => {
-      if (now - lastUpdate >= 33) {
-        if (playingA && audioA.current) setTimeA(audioA.current.currentTime)
-        if (playingB && audioB.current) setTimeB(audioB.current.currentTime)
+      if (now - lastUpdate >= 16) {
+        if (playingA) setTimeA(getDeckTime('A'))
+        if (playingB) setTimeB(getDeckTime('B'))
         lastUpdate = now
       }
       frame = requestAnimationFrame(tick)
     }
     frame = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(frame)
-  }, [playingA, playingB])
+  }, [playingA, playingB, getDeckTime])
 
   const updateBeatGridOffset = useCallback((id: string, delta: number) => {
     const current = tracks.find((item) => item.id === id)
@@ -329,11 +439,9 @@ export default function App() {
   }, [])
 
   function syncDeck(target: 'A' | 'B') {
-    const source = target === 'A' ? audioB.current : audioA.current
-    const destination = target === 'A' ? audioA.current : audioB.current
     const sourceTrack = target === 'A' ? loadedB : loadedA
     const targetTrack = target === 'A' ? loadedA : loadedB
-    if (!source || !destination || !sourceTrack || !targetTrack) {
+    if (!sourceTrack || !targetTrack) {
       setSyncFeedback('Загрузи трек в обе деки, чтобы синхронизировать такты.')
       return
     }
@@ -341,9 +449,6 @@ export default function App() {
       setSyncFeedback('Для Sync нужен определённый BPM у обоих треков.')
       return
     }
-    // Keep tempo, grid spacing, and sync rate on one canonical BPM-derived period.
-    // The analyzer's sub-BPM interval estimate can differ from the displayed integer BPM
-    // and accumulate visible drift over several bars.
     const sourceBeat = 60 / sourceTrack.bpm
     const targetBeat = 60 / targetTrack.bpm
     const rate = targetBeat / sourceBeat
@@ -353,39 +458,45 @@ export default function App() {
     }
     const sourceOffset = sourceTrack.beatOffset ?? 0
     const targetOffset = targetTrack.beatOffset ?? 0
-
-    // Express the source playhead as a fraction of its detected beat, then
-    // map that fraction onto the target's beat grid. This accounts for each
-    // track's detected grid phase instead of assuming beat zero at time 0.
-    const sourcePhaseSeconds = ((source.currentTime - sourceOffset) % sourceBeat + sourceBeat) % sourceBeat
+    const sourcePhaseSeconds = ((getDeckTime(target === 'A' ? 'B' : 'A') - sourceOffset) % sourceBeat + sourceBeat) % sourceBeat
     const beatProgress = sourcePhaseSeconds / sourceBeat
-    // Choose the nearest target beat position that matches the source's current phase.
-    // Subtract phase before rounding so we pick the closest valid alignment.
-    const targetBeatIndex = Math.round((destination.currentTime - targetOffset) / targetBeat - beatProgress)
+    const targetTime = getDeckTime(target)
+    const targetBeatIndex = Math.round((targetTime - targetOffset) / targetBeat - beatProgress)
     const alignedTargetTime = targetOffset + (targetBeatIndex + beatProgress) * targetBeat
-
-    destination.playbackRate = rate
-    destination.currentTime = Math.max(0, Math.min(Number.isFinite(destination.duration) ? Math.max(0, destination.duration - 0.05) : alignedTargetTime, alignedTargetTime))
+    const state = engineRef.current[target]
+    state.rate = rate
+    const activeSource = sourcesRef.current[target]
+    if (activeSource) activeSource.playbackRate.setTargetAtTime(rate, audioContextRef.current?.currentTime ?? 0, 0.01)
+    seekEngine(target, Math.max(0, Math.min((target === 'A' ? durationA : durationB) || alignedTargetTime, alignedTargetTime)))
     setSyncRates((current) => ({ ...current, [target]: rate }))
     setSyncArmed((current) => ({ ...current, [target]: true }))
     setSyncFeedback(`Дека ${target} синхронизирована с декой ${target === 'A' ? 'B' : 'A'} · сетка учтена · ${sourceTrack.bpm} BPM · скорость ${rate.toFixed(3)}×`)
   }
 
   async function togglePlay(which: 'A' | 'B') {
-    const audio = which === 'A' ? audioA.current : audioB.current
-    const source = which === 'A' ? srcA : srcB
-    if (!audio || !source) { setError('Сначала добавь трек и загрузи его в дек'); return }
-    if (!audio.paused) { audio.pause(); return }
-    // Re-align immediately before playback if Sync was pressed while this deck was paused.
-    const otherAudio = which === 'A' ? audioB.current : audioA.current
-    if (syncArmed[which] && otherAudio && !otherAudio.paused) syncDeck(which)
-    const mix = crossfade / 100
-    audio.volume = which === 'A' ? Math.cos(mix * Math.PI / 2) : Math.sin(mix * Math.PI / 2)
-    try { await audio.play(); setError('') } catch { setError(`Дека ${which}: браузер не смог запустить аудио. Проверь формат файла и громкость устройства.`) }
+    const track = which === 'A' ? loadedA : loadedB
+    if (!track) { setError('Сначала добавь трек и загрузи его в дек'); return }
+    if (engineRef.current[which].playing) {
+      stopEngine(which)
+      if (which === 'A') setTimeA(engineRef.current.A.offset); else setTimeB(engineRef.current.B.offset)
+      return
+    }
+    const other = which === 'A' ? 'B' : 'A'
+    if (syncArmed[which] && engineRef.current[other].playing) syncDeck(which)
+    try {
+      await startEngine(which, track, getDeckTime(which), loopRanges[which])
+      setError('')
+    } catch (e) {
+      setError(e instanceof Error ? `Дека ${which}: ${e.message}` : `Дека ${which}: не удалось запустить аудио`)
+    }
   }
   function seek(which: 'A' | 'B', value: number) {
-    const audio = which === 'A' ? audioA.current : audioB.current
-    if (audio && Number.isFinite(audio.duration)) audio.currentTime = value
+    seekEngine(which, value)
+  }
+  function stopToAnchor(which: 'A' | 'B', anchor: number) {
+    stopEngine(which)
+    engineRef.current[which].offset = anchor
+    if (which === 'A') setTimeA(anchor); else setTimeB(anchor)
   }
   async function importFiles(files: FileList | File[]) {
     const chosen = Array.from(files)
@@ -492,12 +603,12 @@ export default function App() {
       </div>
     </header>
     <input ref={fileInput} className="visually-hidden" type="file" accept="audio/*,.mp3,.wav,.m4a,.aac,.aiff,.aif,.ogg,.flac,.opus" multiple onChange={(event) => { if (event.target.files) void importFiles(event.target.files) }} />
-    <audio ref={audioA} src={srcA || undefined} preload="metadata" onTimeUpdate={() => { if (audioA.current) setTimeA(audioA.current.currentTime) }} onLoadedMetadata={() => { if (audioA.current) setDurationA(audioA.current.duration) }} onPlay={() => setPlayingA(true)} onPause={() => setPlayingA(false)} onEnded={() => setPlayingA(false)} onError={() => setError("Дека A: браузер не смог декодировать этот аудиофайл.")} />
-    <audio ref={audioB} src={srcB || undefined} preload="metadata" onTimeUpdate={() => { if (audioB.current) setTimeB(audioB.current.currentTime) }} onLoadedMetadata={() => { if (audioB.current) setDurationB(audioB.current.duration) }} onPlay={() => setPlayingB(true)} onPause={() => setPlayingB(false)} onEnded={() => setPlayingB(false)} onError={() => setError("Дека B: браузер не смог декодировать этот аудиофайл.")} />
+    <audio ref={audioA} src={srcA || undefined} muted preload="metadata" onTimeUpdate={() => { if (audioA.current) setTimeA(audioA.current.currentTime) }} onLoadedMetadata={() => { if (audioA.current) setDurationA(audioA.current.duration) }} onPlay={() => setPlayingA(true)} onPause={() => setPlayingA(false)} onEnded={() => setPlayingA(false)} onError={() => setError("Дека A: браузер не смог декодировать этот аудиофайл.")} />
+    <audio ref={audioB} src={srcB || undefined} muted preload="metadata" onTimeUpdate={() => { if (audioB.current) setTimeB(audioB.current.currentTime) }} onLoadedMetadata={() => { if (audioB.current) setDurationB(audioB.current.duration) }} onPlay={() => setPlayingB(true)} onPause={() => setPlayingB(false)} onEnded={() => setPlayingB(false)} onError={() => setError("Дека B: браузер не смог декодировать этот аудиофайл.")} />
 
     <section className="decks" aria-label="Деки">
-      <Deck letter="A" track={loadedA} tracks={tracks} onLoad={(id) => loadDeck('A', id)} onImport={() => fileInput.current?.click()} choosing={picker === 'A'} setChoosing={(v) => setPicker(v ? 'A' : null)} playing={playingA} time={timeA} duration={durationA} onPlay={() => void togglePlay('A')} onSeek={(v) => seek('A', v)} onStop={(anchor) => { if (audioA.current) { audioA.current.pause(); audioA.current.currentTime = anchor; setTimeA(anchor) } }} getCurrentTime={getTimeA} onSync={() => syncDeck('A')} onGridNudge={(delta) => loadedA && updateBeatGridOffset(loadedA.id, delta)} syncRate={syncRates.A} />
-      <Deck letter="B" track={loadedB} tracks={tracks} onLoad={(id) => loadDeck('B', id)} onImport={() => fileInput.current?.click()} choosing={picker === 'B'} setChoosing={(v) => setPicker(v ? 'B' : null)} playing={playingB} time={timeB} duration={durationB} onPlay={() => void togglePlay('B')} onSeek={(v) => seek('B', v)} onStop={(anchor) => { if (audioB.current) { audioB.current.pause(); audioB.current.currentTime = anchor; setTimeB(anchor) } }} getCurrentTime={getTimeB} onSync={() => syncDeck('B')} onGridNudge={(delta) => loadedB && updateBeatGridOffset(loadedB.id, delta)} syncRate={syncRates.B} />
+      <Deck letter="A" track={loadedA} tracks={tracks} onLoad={(id) => loadDeck('A', id)} onImport={() => fileInput.current?.click()} choosing={picker === 'A'} setChoosing={(v) => setPicker(v ? 'A' : null)} playing={playingA} time={timeA} duration={durationA} onPlay={() => void togglePlay('A')} onSeek={(v) => seek('A', v)} onStop={(anchor) => stopToAnchor('A', anchor)} getCurrentTime={getTimeA} onLoopChange={onLoopA} onSync={() => syncDeck('A')} onGridNudge={(delta) => loadedA && updateBeatGridOffset(loadedA.id, delta)} syncRate={syncRates.A} />
+      <Deck letter="B" track={loadedB} tracks={tracks} onLoad={(id) => loadDeck('B', id)} onImport={() => fileInput.current?.click()} choosing={picker === 'B'} setChoosing={(v) => setPicker(v ? 'B' : null)} playing={playingB} time={timeB} duration={durationB} onPlay={() => void togglePlay('B')} onSeek={(v) => seek('B', v)} onStop={(anchor) => stopToAnchor('B', anchor)} getCurrentTime={getTimeB} onLoopChange={onLoopB} onSync={() => syncDeck('B')} onGridNudge={(delta) => loadedB && updateBeatGridOffset(loadedB.id, delta)} syncRate={syncRates.B} />
     </section>
 
     {syncFeedback && <p className="sync-feedback" role="status">{syncFeedback}<button aria-label="Закрыть сообщение Sync" onClick={() => setSyncFeedback('')}>×</button></p>}
@@ -506,7 +617,7 @@ export default function App() {
       <div className="crossfader-wrap">
         <span>A</span><input aria-label="Кроссфейдер" type="range" min="0" max="100" value={crossfade} onChange={(e) => setCrossfade(Number(e.target.value))} style={{'--mix-position': `${crossfade}%`} as CSSProperties} /><span>B</span>
       </div>
-      <div className="mixer-bottom"><span>MASTER</span><span>{Math.round((audioA.current?.volume ?? 0) * 100)} / {Math.round((audioB.current?.volume ?? 0) * 100)}</span></div>
+      <div className="mixer-bottom"><span>MASTER</span><span>{Math.round(Math.cos(crossfade / 100 * Math.PI / 2) * 100)} / {Math.round(Math.sin(crossfade / 100 * Math.PI / 2) * 100)}</span></div>
     </section>
 
     <section className="library-section" aria-label="Библиотека">
@@ -565,7 +676,7 @@ export default function App() {
   </main>
 }
 
-function Deck({ letter, track, tracks, onLoad, onImport, choosing, setChoosing, playing, time, duration, onPlay, onSeek, onStop, onSync, onGridNudge, syncRate, getCurrentTime }: { letter: 'A' | 'B'; track?: LocalTrack; tracks: LocalTrack[]; onLoad: (id: string) => void; onImport: () => void; choosing: boolean; setChoosing: (value: boolean) => void; playing: boolean; time: number; duration: number; onPlay: () => void; onSeek: (value: number) => void; onStop: (anchor: number) => void; onSync: () => void; onGridNudge: (delta: number) => void; syncRate: number; getCurrentTime: () => number }) {
+function Deck({ letter, track, tracks, onLoad, onImport, choosing, setChoosing, playing, time, duration, onPlay, onSeek, onStop, onSync, onGridNudge, syncRate, getCurrentTime, onLoopChange }: { letter: 'A' | 'B'; track?: LocalTrack; tracks: LocalTrack[]; onLoad: (id: string) => void; onImport: () => void; choosing: boolean; setChoosing: (value: boolean) => void; playing: boolean; time: number; duration: number; onPlay: () => void; onSeek: (value: number) => void; onStop: (anchor: number) => void; onSync: () => void; onGridNudge: (delta: number) => void; syncRate: number; getCurrentTime: () => number; onLoopChange: (range: LoopRange | null) => void }) {
   const [waveformPeaks, setWaveformPeaks] = useState<WaveformPyramid | null>(null)
   const [waveformVisible, setWaveformVisible] = useState(true)
   const [zoom, setZoom] = useState(18)
@@ -613,21 +724,9 @@ function Deck({ letter, track, tracks, onLoad, onImport, choosing, setChoosing, 
   // This reduces loop-boundary scheduling latency while keeping HTMLAudioElement,
   // Sync, playbackRate and the existing mixer behavior intact.
   useEffect(() => {
-    if (!playing || loopEnd === null || !loopBeats) { loopJumpRef.current = null; return }
-    let frame = 0
-    const checkLoop = () => {
-      const currentTime = getCurrentTime()
-      if (currentTime >= loopEnd - 0.008 && loopJumpRef.current !== loopEnd) {
-        loopJumpRef.current = loopEnd
-        onSeek(loopStart)
-      } else if (currentTime < loopEnd - 0.1) {
-        loopJumpRef.current = null
-      }
-      frame = requestAnimationFrame(checkLoop)
-    }
-    frame = requestAnimationFrame(checkLoop)
-    return () => cancelAnimationFrame(frame)
-  }, [playing, loopEnd, loopBeats, loopStart, onSeek, getCurrentTime])
+    if (loopBeats !== null && loopEnd !== null && loopEnd > loopStart) onLoopChange({ start: loopStart, end: loopEnd })
+    else onLoopChange(null)
+  }, [loopBeats, loopEnd, loopStart, onLoopChange])
   function toggleLoop(beats: number) {
     if (loopBeats === beats) { setLoopBeats(null); loopJumpRef.current = null; return }
     const period = track?.bpm ? 60 / track.bpm : 0
