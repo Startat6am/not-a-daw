@@ -217,6 +217,8 @@ export default function App() {
   const beatGridAttempted = useRef(new Set<string>())
   const audioA = useRef<HTMLAudioElement>(null)
   const audioB = useRef<HTMLAudioElement>(null)
+  const getTimeA = useCallback(() => audioA.current?.currentTime ?? 0, [])
+  const getTimeB = useCallback(() => audioB.current?.currentTime ?? 0, [])
   const loadedA = tracks.find((track) => track.id === deckA)
   const loadedB = tracks.find((track) => track.id === deckB)
   const detailTrack = tracks.find((track) => track.id === detailTrackId)
@@ -494,8 +496,8 @@ export default function App() {
     <audio ref={audioB} src={srcB || undefined} preload="metadata" onTimeUpdate={() => { if (audioB.current) setTimeB(audioB.current.currentTime) }} onLoadedMetadata={() => { if (audioB.current) setDurationB(audioB.current.duration) }} onPlay={() => setPlayingB(true)} onPause={() => setPlayingB(false)} onEnded={() => setPlayingB(false)} onError={() => setError("Дека B: браузер не смог декодировать этот аудиофайл.")} />
 
     <section className="decks" aria-label="Деки">
-      <Deck letter="A" track={loadedA} tracks={tracks} onLoad={(id) => loadDeck('A', id)} onImport={() => fileInput.current?.click()} choosing={picker === 'A'} setChoosing={(v) => setPicker(v ? 'A' : null)} playing={playingA} time={timeA} duration={durationA} onPlay={() => void togglePlay('A')} onSeek={(v) => seek('A', v)} onStop={(anchor) => { if (audioA.current) { audioA.current.pause(); audioA.current.currentTime = anchor; setTimeA(anchor) } }} onSync={() => syncDeck('A')} onGridNudge={(delta) => loadedA && updateBeatGridOffset(loadedA.id, delta)} syncRate={syncRates.A} />
-      <Deck letter="B" track={loadedB} tracks={tracks} onLoad={(id) => loadDeck('B', id)} onImport={() => fileInput.current?.click()} choosing={picker === 'B'} setChoosing={(v) => setPicker(v ? 'B' : null)} playing={playingB} time={timeB} duration={durationB} onPlay={() => void togglePlay('B')} onSeek={(v) => seek('B', v)} onStop={(anchor) => { if (audioB.current) { audioB.current.pause(); audioB.current.currentTime = anchor; setTimeB(anchor) } }} onSync={() => syncDeck('B')} onGridNudge={(delta) => loadedB && updateBeatGridOffset(loadedB.id, delta)} syncRate={syncRates.B} />
+      <Deck letter="A" track={loadedA} tracks={tracks} onLoad={(id) => loadDeck('A', id)} onImport={() => fileInput.current?.click()} choosing={picker === 'A'} setChoosing={(v) => setPicker(v ? 'A' : null)} playing={playingA} time={timeA} duration={durationA} onPlay={() => void togglePlay('A')} onSeek={(v) => seek('A', v)} onStop={(anchor) => { if (audioA.current) { audioA.current.pause(); audioA.current.currentTime = anchor; setTimeA(anchor) } }} getCurrentTime={getTimeA} onSync={() => syncDeck('A')} onGridNudge={(delta) => loadedA && updateBeatGridOffset(loadedA.id, delta)} syncRate={syncRates.A} />
+      <Deck letter="B" track={loadedB} tracks={tracks} onLoad={(id) => loadDeck('B', id)} onImport={() => fileInput.current?.click()} choosing={picker === 'B'} setChoosing={(v) => setPicker(v ? 'B' : null)} playing={playingB} time={timeB} duration={durationB} onPlay={() => void togglePlay('B')} onSeek={(v) => seek('B', v)} onStop={(anchor) => { if (audioB.current) { audioB.current.pause(); audioB.current.currentTime = anchor; setTimeB(anchor) } }} getCurrentTime={getTimeB} onSync={() => syncDeck('B')} onGridNudge={(delta) => loadedB && updateBeatGridOffset(loadedB.id, delta)} syncRate={syncRates.B} />
     </section>
 
     {syncFeedback && <p className="sync-feedback" role="status">{syncFeedback}<button aria-label="Закрыть сообщение Sync" onClick={() => setSyncFeedback('')}>×</button></p>}
@@ -563,7 +565,7 @@ export default function App() {
   </main>
 }
 
-function Deck({ letter, track, tracks, onLoad, onImport, choosing, setChoosing, playing, time, duration, onPlay, onSeek, onStop, onSync, onGridNudge, syncRate }: { letter: 'A' | 'B'; track?: LocalTrack; tracks: LocalTrack[]; onLoad: (id: string) => void; onImport: () => void; choosing: boolean; setChoosing: (value: boolean) => void; playing: boolean; time: number; duration: number; onPlay: () => void; onSeek: (value: number) => void; onStop: (anchor: number) => void; onSync: () => void; onGridNudge: (delta: number) => void; syncRate: number }) {
+function Deck({ letter, track, tracks, onLoad, onImport, choosing, setChoosing, playing, time, duration, onPlay, onSeek, onStop, onSync, onGridNudge, syncRate, getCurrentTime }: { letter: 'A' | 'B'; track?: LocalTrack; tracks: LocalTrack[]; onLoad: (id: string) => void; onImport: () => void; choosing: boolean; setChoosing: (value: boolean) => void; playing: boolean; time: number; duration: number; onPlay: () => void; onSeek: (value: number) => void; onStop: (anchor: number) => void; onSync: () => void; onGridNudge: (delta: number) => void; syncRate: number; getCurrentTime: () => number }) {
   const [waveformPeaks, setWaveformPeaks] = useState<WaveformPyramid | null>(null)
   const [waveformVisible, setWaveformVisible] = useState(true)
   const [zoom, setZoom] = useState(18)
@@ -606,13 +608,26 @@ function Deck({ letter, track, tracks, onLoad, onImport, choosing, setChoosing, 
   }, [track?.id, track?.blob])
   useEffect(() => { setZoom(18); setAnchorTime(0); setGridNudge(0); setLoopBeats(null); setLoopStart(0); loopJumpRef.current = null }, [track?.id])
   const loopEnd = loopBeats && track?.bpm ? loopStart + loopBeats * (60 / track.bpm) : null
+  // Poll the media clock directly on every animation frame instead of waiting for
+  // React state/effects (which update the visible playhead at only ~30 fps).
+  // This reduces loop-boundary scheduling latency while keeping HTMLAudioElement,
+  // Sync, playbackRate and the existing mixer behavior intact.
   useEffect(() => {
     if (!playing || loopEnd === null || !loopBeats) { loopJumpRef.current = null; return }
-    if (time >= loopEnd - 0.025 && loopJumpRef.current !== loopEnd) {
-      loopJumpRef.current = loopEnd
-      onSeek(loopStart)
-    } else if (time < loopEnd - 0.1) loopJumpRef.current = null
-  }, [playing, time, loopEnd, loopBeats, loopStart, onSeek])
+    let frame = 0
+    const checkLoop = () => {
+      const currentTime = getCurrentTime()
+      if (currentTime >= loopEnd - 0.008 && loopJumpRef.current !== loopEnd) {
+        loopJumpRef.current = loopEnd
+        onSeek(loopStart)
+      } else if (currentTime < loopEnd - 0.1) {
+        loopJumpRef.current = null
+      }
+      frame = requestAnimationFrame(checkLoop)
+    }
+    frame = requestAnimationFrame(checkLoop)
+    return () => cancelAnimationFrame(frame)
+  }, [playing, loopEnd, loopBeats, loopStart, onSeek, getCurrentTime])
   function toggleLoop(beats: number) {
     if (loopBeats === beats) { setLoopBeats(null); loopJumpRef.current = null; return }
     const period = track?.bpm ? 60 / track.bpm : 0
@@ -681,7 +696,7 @@ function Deck({ letter, track, tracks, onLoad, onImport, choosing, setChoosing, 
       <div className="waveform-anchor-line" style={{ left: `calc(50% + ${(anchorTime - time) * zoom}px)` }} aria-label={`Якорь ${formatDuration(anchorTime)}`} title={`Якорь ${formatDuration(anchorTime)}`} />
       <div className="waveform-center-line" aria-hidden="true" />
     </div>
-    <div className="waveform-caption"><span>CUE {formatDuration(anchorTime)}</span><div className="waveform-zoom"><button type="button" aria-label="Уменьшить масштаб волны" disabled={zoom <= 6} onClick={() => setZoom((value) => Math.max(6, value / 1.5))}>−</button><span>{(zoom / 18).toFixed(1)}×</span><button type="button" aria-label="Увеличить масштаб волны" disabled={zoom >= 72} onClick={() => setZoom((value) => Math.min(72, value * 1.5))}>+</button></div><div className="grid-adjust"><button type="button" aria-label="Сдвинуть сетку битов назад на 10 миллисекунд" title="Сетка −10 мс" disabled={!track?.bpm} onClick={() => { onGridNudge(-0.01); setGridNudge(0) }}>−</button><span title="Поправка сетки сохраняется в треке">GRID{track?.bpm ? ` · ${track.bpm}` : " · BPM —"}</span><button type="button" aria-label="Сдвинуть сетку битов вперёд на 10 миллисекунд" title="Сетка +10 мс" disabled={!track?.bpm} onClick={() => { onGridNudge(0.01); setGridNudge(0) }}>+</button></div></div>
+    <div className="waveform-caption"><span>CUE {formatDuration(anchorTime)}</span><div className="waveform-zoom"><button type="button" aria-label="Уменьшить масштаб волны" disabled={zoom <= 6} onClick={() => setZoom((value) => Math.max(6, value / 1.5))}>−</button><span>{(zoom / 18).toFixed(1)}×</span><button type="button" aria-label="Увеличить масштаб волны" disabled={zoom >= 144} onClick={() => setZoom((value) => Math.min(144, value * 1.5))}>+</button></div><div className="grid-adjust"><button type="button" aria-label="Сдвинуть сетку битов назад на 10 миллисекунд" title="Сетка −10 мс" disabled={!track?.bpm} onClick={() => { onGridNudge(-0.01); setGridNudge(0) }}>−</button><span title="Поправка сетки сохраняется в треке">GRID{track?.bpm ? ` · ${track.bpm}` : " · BPM —"}</span><button type="button" aria-label="Сдвинуть сетку битов вперёд на 10 миллисекунд" title="Сетка +10 мс" disabled={!track?.bpm} onClick={() => { onGridNudge(0.01); setGridNudge(0) }}>+</button></div></div>
     <div className="deck-meta"><span><b>{track?.bpm ?? '—'}</b> BPM</span><span><b>{syncRate.toFixed(2)}×</b> RATE</span></div>
     <div className="waveform-seek"><input aria-label={`Точная позиция трека ${letter}`} type="range" min={0} max={Math.max(duration || track?.duration || 0, 0.01)} step="0.01" value={Math.min(time, duration || track?.duration || time)} onChange={(event) => onSeek(Number(event.target.value))} disabled={!track} /><span>{formatDuration(time)}</span></div><div className="transport"><button aria-label={`Стоп: вернуться к якорю деки ${letter}`} title="Стоп · к якорю" onClick={() => onStop(anchorTime)}>■</button><button className="play-button" aria-label={playing ? `Пауза деки ${letter}` : `Воспроизвести деку ${letter}`} title={playing ? "Пауза" : "Воспроизвести"} onClick={onPlay} disabled={!track}>{playing ? "Ⅱ" : "▶"}</button><button aria-label={`Установить якорь деки ${letter} в текущей позиции`} title="Поставить якорь здесь" onClick={() => setAnchorTime(time)} disabled={!track}>⚑</button><button aria-label={`Выбрать трек для деки ${letter}`} onClick={() => tracks.length ? setChoosing(!choosing) : onImport()}>♫</button></div>
     <div className="loop-controls" aria-label={`Цикл деки ${letter}`}>
