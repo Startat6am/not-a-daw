@@ -291,7 +291,7 @@ export default function App() {
       if (sourcesRef.current[which] !== source) return
       sourcesRef.current[which] = null
       const state = engineRef.current[which]
-      if (!state.loopStart) {
+      if (state.loopStart === null || state.loopEnd === null) {
         engineRef.current[which] = { ...state, offset: state.duration, playing: false }
         if (which === 'A') setPlayingA(false); else setPlayingB(false)
       }
@@ -799,7 +799,7 @@ function Deck({ letter, track, tracks, onLoad, onImport, choosing, setChoosing, 
     <div className="waveform-seek"><input aria-label={`Точная позиция трека ${letter}`} type="range" min={0} max={Math.max(duration || track?.duration || 0, 0.01)} step="0.01" value={Math.min(time, duration || track?.duration || time)} onChange={(event) => onSeek(Number(event.target.value))} disabled={!track} /><span>{formatDuration(time)}</span></div><div className="transport"><button aria-label={`Стоп: вернуться к якорю деки ${letter}`} title="Стоп · к якорю" onClick={() => onStop(anchorTime)}>■</button><button className="play-button" aria-label={playing ? `Пауза деки ${letter}` : `Воспроизвести деку ${letter}`} title={playing ? "Пауза" : "Воспроизвести"} onClick={onPlay} disabled={!track}>{playing ? "Ⅱ" : "▶"}</button><button aria-label={`Установить якорь деки ${letter} в текущей позиции`} title="Поставить якорь здесь" onClick={() => setAnchorTime(time)} disabled={!track}>⚑</button><button aria-label={`Выбрать трек для деки ${letter}`} onClick={() => tracks.length ? setChoosing(!choosing) : onImport()}>♫</button></div>
     <div className="loop-controls" aria-label={`Цикл деки ${letter}`}>
       <span>LOOP</span>
-      {[1, 2, 4, 8].map((beats) => <button key={beats} className={loopBeats === beats ? 'active' : ''} aria-pressed={loopBeats === beats} title={`Цикл на ${beats} дол`} onClick={() => toggleLoop(beats)} disabled={!track?.bpm}>{beats}</button>)}
+      {[1, 2, 4, 8].map((beats) => <button key={beats} className={loopBeats === beats ? 'active' : ''} aria-pressed={loopBeats === beats} title={`Цикл на ${beats} дол`} onClick={() => toggleLoop(beats)} disabled={!track?.bpm || ((duration || track?.duration || 0) > 0 && (duration || track?.duration || 0) < beats * (60 / (track?.bpm ?? 1)))}>{beats}</button>)}
       {loopBeats !== null && <button className="loop-exit" onClick={() => { setLoopBeats(null); loopJumpRef.current = null }} title="Выключить цикл">×</button>}
     </div>
     <button className="sync-button" onClick={onSync} disabled={!track}>{`SYNC ${letter} ← ${letter === 'A' ? 'B' : 'A'}`}</button>
