@@ -113,7 +113,10 @@ function WaveformCanvas({ waveform, time, zoom, duration, playing }: { waveform:
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const timeRef = useRef(time)
   const baseTimeRef = useRef(time)
+  const drawRef = useRef<() => void>(() => undefined)
   timeRef.current = time
+
+  // Expensive waveform rasterization only happens when the track, scale, or size changes.
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -133,7 +136,6 @@ function WaveformCanvas({ waveform, time, zoom, duration, playing }: { waveform:
       context.setTransform(ratio, 0, 0, ratio, 0, 0)
       context.clearRect(0, 0, width, height)
       if (!waveform || !duration || !waveform.length) return
-
       const binsPerPixel = waveform.length / waveform.duration / zoom
       const levelIndex = Math.max(0, Math.min(waveform.levels.length - 1, Math.floor(Math.log2(Math.max(1, binsPerPixel)))))
       const level = waveform.levels[levelIndex]
@@ -160,15 +162,39 @@ function WaveformCanvas({ waveform, time, zoom, duration, playing }: { waveform:
       }
       context.globalAlpha = 1
     }
+    drawRef.current = draw
     baseTimeRef.current = timeRef.current
+    canvas.style.transform = 'translate3d(0,0,0)'
     draw()
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => {
+      baseTimeRef.current = timeRef.current
+      canvas.style.transform = 'translate3d(0,0,0)'
+      draw()
+    }) : null
+    observer?.observe(canvas)
+    const handleResize = () => {
+      baseTimeRef.current = timeRef.current
+      canvas.style.transform = 'translate3d(0,0,0)'
+      draw()
+    }
+    window.addEventListener('resize', handleResize)
+    return () => {
+      observer?.disconnect()
+      window.removeEventListener('resize', handleResize)
+    }
+  }, [waveform, zoom, duration])
+
+  // Playback only moves the already-rasterized canvas; it never triggers a full redraw.
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
     let frame = 0
     const animate = () => {
       const width = canvas.clientWidth
       const delta = (baseTimeRef.current - timeRef.current) * zoom
       if (Math.abs(delta) > Math.max(80, width * 0.4)) {
         baseTimeRef.current = timeRef.current
-        draw()
+        drawRef.current()
         canvas.style.transform = 'translate3d(0,0,0)'
       } else {
         canvas.style.transform = `translate3d(${delta}px,0,0)`
@@ -176,21 +202,15 @@ function WaveformCanvas({ waveform, time, zoom, duration, playing }: { waveform:
       frame = requestAnimationFrame(animate)
     }
     if (playing) frame = requestAnimationFrame(animate)
-    else canvas.style.transform = 'translate3d(0,0,0)'
-    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => {
+    else {
       baseTimeRef.current = timeRef.current
       canvas.style.transform = 'translate3d(0,0,0)'
-      draw()
-    }) : null
-    observer?.observe(canvas)
-    window.addEventListener('resize', draw)
+    }
     return () => {
       cancelAnimationFrame(frame)
       canvas.style.transform = 'translate3d(0,0,0)'
-      observer?.disconnect()
-      window.removeEventListener('resize', draw)
     }
-  }, [waveform, zoom, duration, playing, timeRef])
+  }, [playing, zoom, duration, waveform])
   return <canvas ref={canvasRef} className="waveform-canvas" aria-hidden="true" />
 }
 
@@ -268,6 +288,14 @@ export default function App() {
     const position = getDeckTime(which)
     const source = sourcesRef.current[which]
     sourcesRef.current[which] = null
+    const context = audioContextRef.current
+    const gain = gainsRef.current[which]
+    // Mute the deck's output immediately as well as stopping the source. This
+    // avoids waiting for already-queued source samples to drain through the graph.
+    if (context && gain) {
+      gain.gain.cancelScheduledValues(context.currentTime)
+      gain.gain.setValueAtTime(0, context.currentTime)
+    }
     if (source) { source.onended = null; try { source.stop() } catch { /* already stopped */ } }
     engineRef.current[which] = { ...current, offset: position, playing: false, startedAt: 0 }
     if (which === 'A') setPlayingA(false); else setPlayingB(false)
@@ -299,6 +327,10 @@ export default function App() {
     if (!context || !gain) throw new Error('Не удалось запустить аудиодвижок')
     await context.resume()
     stopEngine(which)
+    // Restore the current crossfader level after stopEngine's instant mute.
+    const mix = crossfade / 100
+    gain.gain.cancelScheduledValues(context.currentTime)
+    gain.gain.setValueAtTime(which === 'A' ? Math.cos(mix * Math.PI / 2) : Math.sin(mix * Math.PI / 2), context.currentTime)
     const current = engineRef.current[which]
     const rate = current.rate
     const safeOffset = Math.max(0, Math.min(Math.max(0, buffer.duration - 0.001), offset))
