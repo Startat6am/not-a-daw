@@ -307,7 +307,7 @@ export default function App() {
         const scope = window as typeof window & { webkitAudioContext?: typeof AudioContext }
         const AudioContextClass = window.AudioContext || scope.webkitAudioContext
         if (!AudioContextClass) throw new Error('Web Audio API недоступен в этом браузере')
-        const context = audioContextRef.current ?? new AudioContextClass()
+        const context = audioContextRef.current ?? new AudioContextClass({ latencyHint: 'interactive' })
         audioContextRef.current = context
         if (!gainsRef.current.A) {
           const mix = crossfade / 100
@@ -470,7 +470,7 @@ export default function App() {
     let frame = 0
     let lastUpdate = 0
     const tick = (now: number) => {
-      if (now - lastUpdate >= 33) {
+      if (now - lastUpdate >= 100) {
         if (playingA) setTimeA(getDeckTime('A'))
         if (playingB) setTimeB(getDeckTime('B'))
         lastUpdate = now
@@ -803,7 +803,7 @@ function Deck({ letter, track, tracks, onLoad, onImport, choosing, setChoosing, 
   }
   const beatPeriod = track?.beatPeriod ?? (track?.bpm ? 60 / track.bpm : undefined)
   const beatCount = beatPeriod && duration > 0 ? Math.floor(duration / beatPeriod) : 0
-  const gridStride = Math.max(1, Math.ceil(beatCount / 1600))
+  const gridStride = Math.max(1, Math.ceil(beatCount / 240))
   const gridLines = useMemo(() => {
     if (!track?.bpm || duration <= 0) return []
     const period = 60 / track.bpm
