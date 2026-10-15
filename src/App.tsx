@@ -112,6 +112,7 @@ function getWaveformPeaks(blob: Blob, bins = 16384): Promise<WaveformPyramid> {
 function WaveformCanvas({ waveform, time, zoom, duration, playing }: { waveform: WaveformPyramid | null; time: number; zoom: number; duration: number; playing: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const timeRef = useRef(time)
+  const baseTimeRef = useRef(time)
   timeRef.current = time
   useEffect(() => {
     const canvas = canvasRef.current
@@ -139,7 +140,7 @@ function WaveformCanvas({ waveform, time, zoom, duration, playing }: { waveform:
       const bucketSize = 2 ** levelIndex
       const centerY = height / 2
       const amplitude = height * 0.49
-      const currentTime = timeRef.current
+      const currentTime = baseTimeRef.current
       const xStart = Math.max(0, Math.ceil(width / 2 - currentTime * zoom))
       const xEnd = Math.min(width - 1, Math.floor(width / 2 + (waveform.duration - currentTime) * zoom))
       if (xEnd < xStart) return
@@ -159,26 +160,37 @@ function WaveformCanvas({ waveform, time, zoom, duration, playing }: { waveform:
       }
       context.globalAlpha = 1
     }
+    baseTimeRef.current = timeRef.current
     draw()
     let frame = 0
-    let lastDraw = 0
-    const animate = (now: number) => {
-      if (now - lastDraw >= 33) {
+    const animate = () => {
+      const width = canvas.clientWidth
+      const delta = (baseTimeRef.current - timeRef.current) * zoom
+      if (Math.abs(delta) > Math.max(80, width * 0.4)) {
+        baseTimeRef.current = timeRef.current
         draw()
-        lastDraw = now
+        canvas.style.transform = 'translate3d(0,0,0)'
+      } else {
+        canvas.style.transform = `translate3d(${delta}px,0,0)`
       }
       frame = requestAnimationFrame(animate)
     }
     if (playing) frame = requestAnimationFrame(animate)
-    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(draw) : null
+    else canvas.style.transform = 'translate3d(0,0,0)'
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => {
+      baseTimeRef.current = timeRef.current
+      canvas.style.transform = 'translate3d(0,0,0)'
+      draw()
+    }) : null
     observer?.observe(canvas)
     window.addEventListener('resize', draw)
     return () => {
       cancelAnimationFrame(frame)
+      canvas.style.transform = 'translate3d(0,0,0)'
       observer?.disconnect()
       window.removeEventListener('resize', draw)
     }
-  }, [waveform, zoom, duration, playing])
+  }, [waveform, zoom, duration, playing, timeRef])
   return <canvas ref={canvasRef} className="waveform-canvas" aria-hidden="true" />
 }
 
@@ -702,7 +714,9 @@ function Deck({ letter, track, tracks, onLoad, onImport, choosing, setChoosing, 
   const [titleScrollDistance, setTitleScrollDistance] = useState(0)
   const titleViewportRef = useRef<HTMLDivElement>(null)
   const titleTextRef = useRef<HTMLSpanElement>(null)
-  const dragRef = useRef<{ x: number; time: number; pointerId: number } | null>(null)
+  const dragRef = useRef<{ x: number; time: number; nextTime: number; pointerId: number } | null>(null)
+  const [dragPreviewTime, setDragPreviewTime] = useState<number | null>(null)
+  const displayTime = dragPreviewTime ?? time
   useEffect(() => {
     const viewport = titleViewportRef.current
     const title = titleTextRef.current
@@ -777,19 +791,26 @@ function Deck({ letter, track, tracks, onLoad, onImport, choosing, setChoosing, 
     const waveformStyle = { '--wave-content-width': `${contentWidth}px`, '--wave-offset': `calc(50% - ${time * zoom}px)` } as CSSProperties
   function beginWaveDrag(event: PointerEvent<HTMLDivElement>) {
     if (!track || !duration) return
-    dragRef.current = { x: event.clientX, time, pointerId: event.pointerId }
+    dragRef.current = { x: event.clientX, time, nextTime: time, pointerId: event.pointerId }
+    setDragPreviewTime(time)
     event.currentTarget.setPointerCapture(event.pointerId)
     event.preventDefault()
   }
   function moveWaveDrag(event: PointerEvent<HTMLDivElement>) {
     const drag = dragRef.current
     if (!drag || drag.pointerId !== event.pointerId) return
-    const nextTime = drag.time - (event.clientX - drag.x) / zoom
-    onSeek(Math.max(0, Math.min(duration, nextTime)))
+    const nextTime = Math.max(0, Math.min(duration, drag.time - (event.clientX - drag.x) / zoom))
+    drag.nextTime = nextTime
+    setDragPreviewTime(nextTime)
     event.preventDefault()
   }
   function endWaveDrag(event: PointerEvent<HTMLDivElement>) {
-    if (dragRef.current?.pointerId === event.pointerId) dragRef.current = null
+    const drag = dragRef.current
+    if (drag?.pointerId === event.pointerId) {
+      dragRef.current = null
+      setDragPreviewTime(null)
+      onSeek(drag.nextTime)
+    }
   }
   return <article className={`deck deck-${letter.toLowerCase()}`}>
     <div className="deck-head">
@@ -801,21 +822,21 @@ function Deck({ letter, track, tracks, onLoad, onImport, choosing, setChoosing, 
       <span className="deck-time">{formatDuration(time)} / {formatDuration(duration || track?.duration)}</span>
       <button className="deck-menu" aria-label={`Выбрать трек для деки ${letter}`} onClick={() => tracks.length ? setChoosing(!choosing) : onImport()}>⋮</button>
     </div>
-    <div className={`waveform wave-${letter.toLowerCase()}`} style={waveformStyle} aria-label={`Увеличенная волна ${letter}; текущая позиция по центру; свайп для перемотки`} role="slider" aria-valuemin={0} aria-valuemax={duration || 0} aria-valuenow={time} tabIndex={track ? 0 : -1}
+    <div className={`waveform wave-${letter.toLowerCase()}`} style={{ ...waveformStyle, '--wave-offset': `calc(50% - ${displayTime * zoom}px)` } as CSSProperties} aria-label={`Увеличенная волна ${letter}; текущая позиция по центру; свайп для перемотки`} role="slider" aria-valuemin={0} aria-valuemax={duration || 0} aria-valuenow={time} tabIndex={track ? 0 : -1}
       onPointerDown={beginWaveDrag} onPointerMove={moveWaveDrag} onPointerUp={endWaveDrag} onPointerCancel={endWaveDrag}
       onKeyDown={(event) => { if (event.key === 'ArrowLeft') onSeek(Math.max(0, time - 0.1)); if (event.key === 'ArrowRight') onSeek(Math.min(duration, time + 0.1)) }}>
       <div className="waveform-content" style={{ width: `${contentWidth}px`, left: `calc(50% - ${time * zoom}px)` }}>
         <div className="waveform-grid" aria-hidden="true">{gridLines}</div>
       </div>
-      {waveformVisible && <WaveformCanvas waveform={waveformPeaks} time={time} zoom={zoom} duration={duration || track?.duration || 0} playing={playing} />}
+      {waveformVisible && <WaveformCanvas waveform={waveformPeaks} time={displayTime} zoom={zoom} duration={duration || track?.duration || 0} playing={playing} />}
       {waveformVisible && !waveformPeaks && <span className="waveform-loading">{track ? 'ЗАГРУЗКА ВОЛНЫ…' : 'ЗАГРУЗИ ТРЕК'}</span>}
       <button type="button" className={`waveform-toggle ${waveformVisible ? 'is-on' : ''}`} aria-pressed={waveformVisible} aria-label={waveformVisible ? 'Скрыть отрисовку волны' : 'Показать отрисовку волны'} title={waveformVisible ? 'Скрыть волну' : 'Показать волну'} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); setWaveformVisible((visible) => !visible) }}>{waveformVisible ? 'WAVE ON' : 'WAVE OFF'}</button>
-      <div className="waveform-anchor-line" style={{ left: `calc(50% + ${(anchorTime - time) * zoom}px)` }} aria-label={`Якорь ${formatDuration(anchorTime)}`} title={`Якорь ${formatDuration(anchorTime)}`} />
+      <div className="waveform-anchor-line" style={{ left: `calc(50% + ${(anchorTime - displayTime) * zoom}px)` }} aria-label={`Якорь ${formatDuration(anchorTime)}`} title={`Якорь ${formatDuration(anchorTime)}`} />
       <div className="waveform-center-line" aria-hidden="true" />
     </div>
     <div className="waveform-caption"><span>CUE {formatDuration(anchorTime)}</span><div className="waveform-zoom"><button type="button" aria-label="Уменьшить масштаб волны" disabled={zoom <= 6} onClick={() => setZoom((value) => Math.max(6, value / 1.5))}>−</button><span>{(zoom / 18).toFixed(1)}×</span><button type="button" aria-label="Увеличить масштаб волны" disabled={zoom >= 144} onClick={() => setZoom((value) => Math.min(144, value * 1.5))}>+</button></div><div className="grid-adjust"><button type="button" aria-label="Сдвинуть сетку битов назад на 10 миллисекунд" title="Сетка −10 мс" disabled={!track?.bpm} onClick={() => { onGridNudge(-0.01); setGridNudge(0) }}>−</button><span title="Поправка сетки сохраняется в треке">GRID{track?.bpm ? ` · ${track.bpm}` : " · BPM —"}</span><button type="button" aria-label="Сдвинуть сетку битов вперёд на 10 миллисекунд" title="Сетка +10 мс" disabled={!track?.bpm} onClick={() => { onGridNudge(0.01); setGridNudge(0) }}>+</button></div></div>
     <div className="deck-meta"><span><b>{track?.bpm ?? '—'}</b> BPM</span><span><b>{syncRate.toFixed(2)}×</b> RATE</span></div>
-    <div className="waveform-seek"><input aria-label={`Точная позиция трека ${letter}`} type="range" min={0} max={Math.max(duration || track?.duration || 0, 0.01)} step="0.01" value={Math.min(time, duration || track?.duration || time)} onChange={(event) => onSeek(Number(event.target.value))} disabled={!track} /><span>{formatDuration(time)}</span></div><div className="transport"><button aria-label={`Стоп: вернуться к якорю деки ${letter}`} title="Стоп · к якорю" onClick={() => onStop(anchorTime)}>■</button><button className="play-button" aria-label={playing ? `Пауза деки ${letter}` : `Воспроизвести деку ${letter}`} title={playing ? "Пауза" : "Воспроизвести"} onClick={onPlay} disabled={!track}>{playing ? "Ⅱ" : "▶"}</button><button aria-label={`Установить якорь деки ${letter} в текущей позиции`} title="Поставить якорь здесь" onClick={() => setAnchorTime(time)} disabled={!track}>⚑</button><button aria-label={`Выбрать трек для деки ${letter}`} onClick={() => tracks.length ? setChoosing(!choosing) : onImport()}>♫</button></div>
+    <div className="waveform-seek"><input aria-label={`Точная позиция трека ${letter}`} type="range" min={0} max={Math.max(duration || track?.duration || 0, 0.01)} step="0.01" value={Math.min(time, duration || track?.duration || time)} onChange={(event) => onSeek(Number(event.target.value))} disabled={!track} /><span>{formatDuration(displayTime)}</span></div><div className="transport"><button aria-label={`Стоп: вернуться к якорю деки ${letter}`} title="Стоп · к якорю" onClick={() => onStop(anchorTime)}>■</button><button className="play-button" aria-label={playing ? `Пауза деки ${letter}` : `Воспроизвести деку ${letter}`} title={playing ? "Пауза" : "Воспроизвести"} onClick={onPlay} disabled={!track}>{playing ? "Ⅱ" : "▶"}</button><button aria-label={`Установить якорь деки ${letter} в текущей позиции`} title="Поставить якорь здесь" onClick={() => setAnchorTime(time)} disabled={!track}>⚑</button><button aria-label={`Выбрать трек для деки ${letter}`} onClick={() => tracks.length ? setChoosing(!choosing) : onImport()}>♫</button></div>
     <div className="loop-controls" aria-label={`Цикл деки ${letter}`}>
       <span>LOOP</span>
       {[1, 2, 4, 8].map((beats) => <button key={beats} className={loopBeats === beats ? 'active' : ''} aria-pressed={loopBeats === beats} title={`Цикл на ${beats} дол`} onClick={() => toggleLoop(beats)} disabled={!track?.bpm || ((duration || track?.duration || 0) > 0 && (duration || track?.duration || 0) < beats * (60 / (track?.bpm ?? 1)))}>{beats}</button>)}
