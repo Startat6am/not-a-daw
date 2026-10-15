@@ -731,8 +731,13 @@ function Deck({ letter, track, tracks, onLoad, onImport, choosing, setChoosing, 
     const period = track?.bpm ? 60 / track.bpm : 0
     if (!period) return
     const offset = track?.beatOffset ?? 0
+    const loopLength = beats * period
+    const trackDuration = duration || track?.duration || 0
+    if (trackDuration > 0 && trackDuration < loopLength) return
     const beatIndex = Math.max(0, Math.round((time - offset) / period))
-    setLoopStart(Math.max(0, offset + beatIndex * period))
+    const alignedStart = Math.max(0, offset + beatIndex * period)
+    const latestStart = trackDuration > 0 ? Math.max(0, trackDuration - loopLength) : alignedStart
+    setLoopStart(Math.min(alignedStart, latestStart))
     setLoopBeats(beats)
     loopJumpRef.current = null
   }
