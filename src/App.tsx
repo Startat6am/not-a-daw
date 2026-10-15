@@ -237,8 +237,6 @@ export default function App() {
     }
     return Math.min(engine.duration || raw, raw)
   }, [])
-  const getTimeA = useCallback(() => getDeckTime('A'), [getDeckTime])
-  const getTimeB = useCallback(() => getDeckTime('B'), [getDeckTime])
   function stopEngine(which: 'A' | 'B') {
     const current = engineRef.current[which]
     const position = getDeckTime(which)
@@ -258,8 +256,9 @@ export default function App() {
         const context = audioContextRef.current ?? new AudioContextClass()
         audioContextRef.current = context
         if (!gainsRef.current.A) {
-          const gainA = context.createGain(); gainA.connect(context.destination); gainsRef.current.A = gainA
-          const gainB = context.createGain(); gainB.connect(context.destination); gainsRef.current.B = gainB
+          const mix = crossfade / 100
+          const gainA = context.createGain(); gainA.gain.value = Math.cos(mix * Math.PI / 2); gainA.connect(context.destination); gainsRef.current.A = gainA
+          const gainB = context.createGain(); gainB.gain.value = Math.sin(mix * Math.PI / 2); gainB.connect(context.destination); gainsRef.current.B = gainB
         }
         return context.decodeAudioData(await track.blob.arrayBuffer())
       })()
@@ -607,8 +606,8 @@ export default function App() {
     <audio ref={audioB} src={srcB || undefined} muted preload="metadata" onTimeUpdate={() => { if (audioB.current) setTimeB(audioB.current.currentTime) }} onLoadedMetadata={() => { if (audioB.current) setDurationB(audioB.current.duration) }} onPlay={() => setPlayingB(true)} onPause={() => setPlayingB(false)} onEnded={() => setPlayingB(false)} onError={() => setError("Дека B: браузер не смог декодировать этот аудиофайл.")} />
 
     <section className="decks" aria-label="Деки">
-      <Deck letter="A" track={loadedA} tracks={tracks} onLoad={(id) => loadDeck('A', id)} onImport={() => fileInput.current?.click()} choosing={picker === 'A'} setChoosing={(v) => setPicker(v ? 'A' : null)} playing={playingA} time={timeA} duration={durationA} onPlay={() => void togglePlay('A')} onSeek={(v) => seek('A', v)} onStop={(anchor) => stopToAnchor('A', anchor)} getCurrentTime={getTimeA} onLoopChange={onLoopA} onSync={() => syncDeck('A')} onGridNudge={(delta) => loadedA && updateBeatGridOffset(loadedA.id, delta)} syncRate={syncRates.A} />
-      <Deck letter="B" track={loadedB} tracks={tracks} onLoad={(id) => loadDeck('B', id)} onImport={() => fileInput.current?.click()} choosing={picker === 'B'} setChoosing={(v) => setPicker(v ? 'B' : null)} playing={playingB} time={timeB} duration={durationB} onPlay={() => void togglePlay('B')} onSeek={(v) => seek('B', v)} onStop={(anchor) => stopToAnchor('B', anchor)} getCurrentTime={getTimeB} onLoopChange={onLoopB} onSync={() => syncDeck('B')} onGridNudge={(delta) => loadedB && updateBeatGridOffset(loadedB.id, delta)} syncRate={syncRates.B} />
+      <Deck letter="A" track={loadedA} tracks={tracks} onLoad={(id) => loadDeck('A', id)} onImport={() => fileInput.current?.click()} choosing={picker === 'A'} setChoosing={(v) => setPicker(v ? 'A' : null)} playing={playingA} time={timeA} duration={durationA} onPlay={() => void togglePlay('A')} onSeek={(v) => seek('A', v)} onStop={(anchor) => stopToAnchor('A', anchor)} onLoopChange={onLoopA} onSync={() => syncDeck('A')} onGridNudge={(delta) => loadedA && updateBeatGridOffset(loadedA.id, delta)} syncRate={syncRates.A} />
+      <Deck letter="B" track={loadedB} tracks={tracks} onLoad={(id) => loadDeck('B', id)} onImport={() => fileInput.current?.click()} choosing={picker === 'B'} setChoosing={(v) => setPicker(v ? 'B' : null)} playing={playingB} time={timeB} duration={durationB} onPlay={() => void togglePlay('B')} onSeek={(v) => seek('B', v)} onStop={(anchor) => stopToAnchor('B', anchor)} onLoopChange={onLoopB} onSync={() => syncDeck('B')} onGridNudge={(delta) => loadedB && updateBeatGridOffset(loadedB.id, delta)} syncRate={syncRates.B} />
     </section>
 
     {syncFeedback && <p className="sync-feedback" role="status">{syncFeedback}<button aria-label="Закрыть сообщение Sync" onClick={() => setSyncFeedback('')}>×</button></p>}
@@ -676,7 +675,7 @@ export default function App() {
   </main>
 }
 
-function Deck({ letter, track, tracks, onLoad, onImport, choosing, setChoosing, playing, time, duration, onPlay, onSeek, onStop, onSync, onGridNudge, syncRate, getCurrentTime, onLoopChange }: { letter: 'A' | 'B'; track?: LocalTrack; tracks: LocalTrack[]; onLoad: (id: string) => void; onImport: () => void; choosing: boolean; setChoosing: (value: boolean) => void; playing: boolean; time: number; duration: number; onPlay: () => void; onSeek: (value: number) => void; onStop: (anchor: number) => void; onSync: () => void; onGridNudge: (delta: number) => void; syncRate: number; getCurrentTime: () => number; onLoopChange: (range: LoopRange | null) => void }) {
+function Deck({ letter, track, tracks, onLoad, onImport, choosing, setChoosing, playing, time, duration, onPlay, onSeek, onStop, onSync, onGridNudge, syncRate, onLoopChange }: { letter: 'A' | 'B'; track?: LocalTrack; tracks: LocalTrack[]; onLoad: (id: string) => void; onImport: () => void; choosing: boolean; setChoosing: (value: boolean) => void; playing: boolean; time: number; duration: number; onPlay: () => void; onSeek: (value: number) => void; onStop: (anchor: number) => void; onSync: () => void; onGridNudge: (delta: number) => void; syncRate: number; onLoopChange: (range: LoopRange | null) => void }) {
   const [waveformPeaks, setWaveformPeaks] = useState<WaveformPyramid | null>(null)
   const [waveformVisible, setWaveformVisible] = useState(true)
   const [zoom, setZoom] = useState(18)
