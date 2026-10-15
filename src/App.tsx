@@ -109,8 +109,10 @@ function getWaveformPeaks(blob: Blob, bins = 16384): Promise<WaveformPyramid> {
   return task
 }
 
-function WaveformCanvas({ waveform, time, zoom, duration }: { waveform: WaveformPyramid | null; time: number; zoom: number; duration: number }) {
+function WaveformCanvas({ waveform, time, zoom, duration, playing }: { waveform: WaveformPyramid | null; time: number; zoom: number; duration: number; playing: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const timeRef = useRef(time)
+  timeRef.current = time
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -137,12 +139,13 @@ function WaveformCanvas({ waveform, time, zoom, duration }: { waveform: Waveform
       const bucketSize = 2 ** levelIndex
       const centerY = height / 2
       const amplitude = height * 0.49
-      const xStart = Math.max(0, Math.ceil(width / 2 - time * zoom))
-      const xEnd = Math.min(width - 1, Math.floor(width / 2 + (waveform.duration - time) * zoom))
+      const currentTime = timeRef.current
+      const xStart = Math.max(0, Math.ceil(width / 2 - currentTime * zoom))
+      const xEnd = Math.min(width - 1, Math.floor(width / 2 + (waveform.duration - currentTime) * zoom))
       if (xEnd < xStart) return
       context.globalAlpha = 0.92
       for (let x = xStart; x <= xEnd; x++) {
-        const sampleTime = time + (x - width / 2) / zoom
+        const sampleTime = currentTime + (x - width / 2) / zoom
         const baseIndex = Math.max(0, Math.min(waveform.length - 1, Math.floor(sampleTime / waveform.duration * waveform.length)))
         const index = Math.min(level.min.length - 1, Math.floor(baseIndex / bucketSize))
         const hi = Math.max(0, level.max[index] / waveform.peak)
@@ -157,14 +160,25 @@ function WaveformCanvas({ waveform, time, zoom, duration }: { waveform: Waveform
       context.globalAlpha = 1
     }
     draw()
+    let frame = 0
+    let lastDraw = 0
+    const animate = (now: number) => {
+      if (now - lastDraw >= 33) {
+        draw()
+        lastDraw = now
+      }
+      frame = requestAnimationFrame(animate)
+    }
+    if (playing) frame = requestAnimationFrame(animate)
     const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(draw) : null
     observer?.observe(canvas)
     window.addEventListener('resize', draw)
     return () => {
+      cancelAnimationFrame(frame)
       observer?.disconnect()
       window.removeEventListener('resize', draw)
     }
-  }, [waveform, time, zoom, duration])
+  }, [waveform, zoom, duration, playing])
   return <canvas ref={canvasRef} className="waveform-canvas" aria-hidden="true" />
 }
 
@@ -412,7 +426,7 @@ export default function App() {
     let frame = 0
     let lastUpdate = 0
     const tick = (now: number) => {
-      if (now - lastUpdate >= 16) {
+      if (now - lastUpdate >= 33) {
         if (playingA) setTimeA(getDeckTime('A'))
         if (playingB) setTimeB(getDeckTime('B'))
         lastUpdate = now
@@ -793,7 +807,7 @@ function Deck({ letter, track, tracks, onLoad, onImport, choosing, setChoosing, 
       <div className="waveform-content" style={{ width: `${contentWidth}px`, left: `calc(50% - ${time * zoom}px)` }}>
         <div className="waveform-grid" aria-hidden="true">{gridLines}</div>
       </div>
-      {waveformVisible && <WaveformCanvas waveform={waveformPeaks} time={time} zoom={zoom} duration={duration || track?.duration || 0} />}
+      {waveformVisible && <WaveformCanvas waveform={waveformPeaks} time={time} zoom={zoom} duration={duration || track?.duration || 0} playing={playing} />}
       {waveformVisible && !waveformPeaks && <span className="waveform-loading">{track ? 'ЗАГРУЗКА ВОЛНЫ…' : 'ЗАГРУЗИ ТРЕК'}</span>}
       <button type="button" className={`waveform-toggle ${waveformVisible ? 'is-on' : ''}`} aria-pressed={waveformVisible} aria-label={waveformVisible ? 'Скрыть отрисовку волны' : 'Показать отрисовку волны'} title={waveformVisible ? 'Скрыть волну' : 'Показать волну'} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); setWaveformVisible((visible) => !visible) }}>{waveformVisible ? 'WAVE ON' : 'WAVE OFF'}</button>
       <div className="waveform-anchor-line" style={{ left: `calc(50% + ${(anchorTime - time) * zoom}px)` }} aria-label={`Якорь ${formatDuration(anchorTime)}`} title={`Якорь ${formatDuration(anchorTime)}`} />
